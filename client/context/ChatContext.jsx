@@ -55,31 +55,27 @@ export const ChatProvider = ({children})=>{
 
     //Function to get new messages from selected user
 
-    const getNewMessage = async () => {
-        if (!socket) return ;
+    useEffect(() => {
+        if (!socket) return;
 
-        socket.on("newMessage",(newMessage)=>{
-            if (selectedUser && newMessage.senderId === selectedUser._id) {
-                newMessage.seen = true;
-                setMessages((prevMessages)=>[...prevMessages,newMessage])
-                axios.put(`/api/messages/mark/${newMessage._id}`);
-            }else{
-                setUnseenMessages((prevUnseenMessages)=>({
-                    ...prevUnseenMessages,[newMessage.senderId] : prevUnseenMessages[newMessage.senderId] ? prevUnseenMessages[newMessage.senderId]+1 : 1
-                }))
-            }
-        })
+        const handleNewMessage = (newMessage) => {
+        if (selectedUser && newMessage.senderId === selectedUser._id) {
+         newMessage.seen = true;
+         setMessages((prevMessages) => [...prevMessages, newMessage]);
+        axios.put(`/api/messages/mark/${newMessage._id}`);
+        } else {
+            setUnseenMessages((prevUnseenMessages) => ({
+            ...prevUnseenMessages,[newMessage.senderId]: prevUnseenMessages[newMessage.senderId] ? prevUnseenMessages[newMessage.senderId] + 1 : 1,
+      }));
     }
+    };
 
-    // Disconnects or removes the user from the message event listener
-    const unsubscribeFromMessages = ()=>{
-        if(socket) socket.off("newMessage");
-    }
-
-    useEffect(() => {    
-      getNewMessage();
-      return ()=> unsubscribeFromMessages();
-    }, [socket ,selectedUser])
+        socket.on("newMessage", handleNewMessage);
+    
+        return () => {
+            socket.off("newMessage", handleNewMessage);
+        };
+    }, [socket, selectedUser]);
     
 
     const value = {
