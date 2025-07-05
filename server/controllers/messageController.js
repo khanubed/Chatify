@@ -87,6 +87,10 @@ export const sendMessage = async (req , res) => {
         if (recieverSocketId) {
             io.to(recieverSocketId).emit("newMessage", newMessage)
         }
+        const senderSocketId = userSocketMap[senderId];
+        if (senderSocketId) {
+            io.to(senderSocketId).emit("newMessage", newMessage);
+        }
 
         res.json({success: true , newMessage});
     } catch (error) {
