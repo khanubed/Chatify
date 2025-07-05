@@ -43,10 +43,10 @@ const ChatContainer = () => {
      reader.readAsDataURL(file); // this will include the prefix
   };
     useEffect(()=>{
-        if (selectedUser?._id) {
+        if (selectedUser._id) {
           getMessages(selectedUser._id)
         }
-      },[selectedUser?._id, messages])
+      },[selectedUser._id, messages])
 
     useEffect(() => {
       if (scrollEnd.current && messages) {
