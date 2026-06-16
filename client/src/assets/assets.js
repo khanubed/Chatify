@@ -13,7 +13,7 @@ import bgImage from './bgImage.webp'
 
 
 
-const assets = {
+const   assets = {
     avatar_icon,
     gallery_icon,
     help_icon,

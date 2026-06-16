@@ -1,22 +1,38 @@
-import React, { useContext } from 'react'
-import Sidebar from '../components/Sidebar'
-import ChatContainer from '../components/ChatContainer'
-import RightSidebar from '../components/RightSidebar'
-import { useState } from 'react'
-import { ChatContext } from '../../context/ChatContext'
+import React, { useContext } from "react";
+import Sidebar from "../components/Sidebar";
+import ChatContainer from "../components/ChatContainer";
+import RightSidebar from "../components/RightSidebar";
+import { ChatContext } from "../../context/ChatContext";
 
 const HomePage = () => {
-    const {selectedUser} = useContext(ChatContext)
+  const { selectedUser, selectedGroup } = useContext(ChatContext);
+  const isAnyChatActive = !!(selectedUser || selectedGroup);
 
   return (
-    <div className='border w-full h-screen sm:px-[8%]  sm:py-[3%]'>
-        <div className= {`backdrop-blur-xl border-3 border-gray-400 rounded-2xl overflow-hidden h-[100%] grid grid-cols-1 relative ${selectedUser ? 'md:grid-cols-[1fr_1.5fr_1fr] xl:grid-cols-[1fr_2fr_1fr]' : 'md:grid-cols-2 ' }`}>
-            <Sidebar/> 
-            <ChatContainer />
-            <RightSidebar />
+    <div className="w-full h-screen max-h-screen overflow-hidden sm:p-[3vh_8vw] bg-[#0c1322]/40 flex flex-col justify-center">
+      <div className="backdrop-blur-xl border border-gray-700 sm:border-3 sm:border-gray-400 sm:rounded-2xl overflow-hidden h-full w-full flex relative">
+        <div
+          className={`h-full shrink-0 border-r border-gray-800 transition-all duration-300 ${
+            isAnyChatActive
+              ? "hidden md:block md:w-[300px] xl:w-[320px]"
+              : "w-full md:w-[300px] xl:w-[320px]"
+          }`}
+        >
+          <Sidebar />
         </div>
-    </div>
-  )
-}
 
-export default HomePage
+        <div
+          className={`h-full flex-1 min-w-0 transition-all duration-300 ${
+            isAnyChatActive ? "block" : "hidden md:block"
+          }`}
+        >
+          <ChatContainer />
+        </div>
+
+        <RightSidebar />
+      </div>
+    </div>
+  );
+};
+
+export default HomePage;
