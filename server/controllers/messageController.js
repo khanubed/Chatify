@@ -4,18 +4,20 @@ import cloudinary from "../lib/cloudinary.js";
 import { io, userSocketMap } from "../server.js";
 import User from "../models/user.js";
 import Group from "../models/group.js";
+import { uploadToCloudinary } from "../lib/multer.js";
 
 export const getUsersForSideBar = async (req, res) => {
   try {
     const userId = req.user._id;
-    const filteredUsers = await User.find({ _id: { $ne: userId } }).select(
-      "-password",
-    );
+    const users = await User.find({ _id: { $ne: userId } }).select("-password");
 
-    console.log(filteredUsers);
+    const formattedUsers = users.map((user) => ({
+      ...user._doc,
+      hasBlockedMe: user.blockedUsers?.includes(userId) || false,
+    }));
 
     const unseenMessages = {};
-    const promises = filteredUsers.map(async (user) => {
+    const promises = formattedUsers.map(async (user) => {
       const messages = await Message.find({
         senderId: user._id,
         receiverId: userId,
@@ -26,7 +28,7 @@ export const getUsersForSideBar = async (req, res) => {
       }
     });
     await Promise.all(promises);
-    res.json({ success: true, users: filteredUsers, unseenMessages });
+    res.json({ success: true, users: formattedUsers, unseenMessages });
   } catch (error) {
     console.log(error.message);
     res.json({ success: false, message: error.message });
@@ -42,13 +44,11 @@ export const getMessages = async (req, res) => {
     let messages;
 
     if (isGroup === "true") {
-      // 1. First, mark unread group messages as seen by appending your ID
       await Message.updateMany(
         { groupId: targetId, seenBy: { $ne: myId } },
         { $addToSet: { seenBy: myId } },
       );
 
-      // 2. Fetch the newly updated messages with the correct User model fields
       messages = await Message.find({ groupId: targetId })
         .populate("senderId", "fullName profilePic") // 🌟 Match schema attributes
         .populate({
@@ -89,38 +89,109 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
-    const { text, image, isGroup, groupId, parent } = req.body;
+    // 🌟 Added isForwarded, image, audio, video to destructuring from req.body
+    const { text, isGroup, groupId, parent, isForwarded, image, audio, video } =
+      req.body;
     const receiverId = req.params.id;
     const senderId = req.user._id;
 
-    let imageURL;
-    if (image) {
-      const uploadImage = await cloudinary.uploader.upload(image);
-      imageURL = uploadImage.secure_url;
+    const parsedIsGroup = isGroup === "true" || isGroup === true;
+    const parsedIsForwarded = isForwarded === "true" || isForwarded === true; // 🌟 Parse forward flag
+
+    // 🌟 MUTUAL BLOCK CHECK PROTECTION LAYER (Direct Chats Only)
+    if (!parsedIsGroup) {
+      const [receiver, sender] = await Promise.all([
+        User.findById(receiverId),
+        User.findById(senderId),
+      ]);
+
+      if (!receiver || !sender) {
+        return res
+          .status(404)
+          .json({ success: false, message: "User profile not found" });
+      }
+
+      // 1. Check if the receiver has blocked the sender
+      const isSenderBlocked = receiver.blockedUsers?.some(
+        (id) => id && id.toString() === senderId.toString(),
+      );
+
+      if (isSenderBlocked) {
+        return res.status(400).json({
+          success: false,
+          message: "Message not sent. You have been blocked by this user.",
+        });
+      }
+
+      // 2. Check if the sender has blocked the receiver
+      const hasBlockedReceiver = sender.blockedUsers?.some(
+        (id) => id && id.toString() === receiverId.toString(),
+      );
+
+      if (hasBlockedReceiver) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Message not sent. You must unblock this user to send a message.",
+        });
+      }
     }
 
-    // 🌟 Structure base document object including parent context and seenBy tracking arrays
+    // 🌟 MULTIMEDIA PROCESSING LAYER (Updated for Forwards)
+    // Initialize URLs with existing assets sent in req.body (for forwarded media)
+    let imageURL = image || null;
+    let audioURL = audio || null;
+    let videoURL = video || null;
+
+    // If a new file is uploaded, process it normally via Cloudinary (overriding body URLs if any)
+    if (req.file) {
+      const uploadResult = await uploadToCloudinary(
+        req.file.buffer,
+        req.file.mimetype,
+      );
+      const secureUrl = uploadResult.secure_url;
+
+      if (req.file.mimetype.startsWith("image/")) {
+        imageURL = secureUrl;
+        audioURL = null; // Clear others just in case of mixed payloads
+        videoURL = null;
+      } else if (req.file.mimetype.startsWith("audio/")) {
+        audioURL = secureUrl;
+        imageURL = null;
+        videoURL = null;
+      } else if (req.file.mimetype.startsWith("video/")) {
+        videoURL = secureUrl;
+        imageURL = null;
+        audioURL = null;
+      }
+    }
+
+    // Structure message document layout safely
     let newMessage = await Message.create({
       senderId,
-      text,
+      text: text || "",
       image: imageURL,
-      receiverId: isGroup ? null : receiverId,
-      groupId: isGroup ? groupId : null,
-      parent: parent || null,
+      audio: audioURL,
+      video: videoURL,
+      receiverId: parsedIsGroup ? null : receiverId,
+      groupId: parsedIsGroup ? groupId : null,
+      parent: parent && parent !== "null" ? parent : null,
+      seenBy: [senderId],
+      isForwarded: parsedIsForwarded, // 🌟 Saves the forward state to the DB
     });
 
-    // 🌟 Hydrate references so nested UI layouts can render user items cleanly right away
+    // Hydrate references for instant UI rendering
     newMessage = await Message.findById(newMessage._id)
-      .populate("senderId", "name avatar username")
+      .populate("senderId", "fullName profilePic")
       .populate({
         path: "parent",
-        select: "text image senderId",
-        populate: { path: "senderId", select: "name" },
+        select: "text image audio senderId",
+        populate: { path: "senderId", select: "fullName" },
       })
-      .populate("seenBy", "name avatar username");
+      .populate("seenBy", "fullName profilePic");
 
     // Real-Time Socket Interception Dispatch Layer
-    if (isGroup && groupId) {
+    if (parsedIsGroup && groupId) {
       io.to(groupId.toString()).emit("newMessage", newMessage);
     } else {
       const recieverSocketId = userSocketMap[receiverId];
@@ -135,8 +206,8 @@ export const sendMessage = async (req, res) => {
 
     res.json({ success: true, newMessage });
   } catch (error) {
-    console.log(error.message);
-    res.json({ success: false, message: error.message });
+    console.error("Controller Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -186,6 +257,8 @@ export const deleteMessage = async (req, res) => {
     message.isDeleted = true;
     message.text = "This message was deleted"; // Scrub the contents
     message.image = null; // Remove any attached media links
+    message.audio = null;
+    message.video = null;
     await message.save();
 
     res.status(200).json(message);
@@ -218,6 +291,65 @@ export const markAsSeen = async (req, res) => {
     res.status(200).json({ success: true });
   } catch (error) {
     console.error("Error in markAsSeen controller:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const toggleReaction = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { emoji } = req.body;
+    const userId = req.user._id;
+    const message = await Message.findById(messageId);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    // Find if the authenticated user already has a reaction
+    const existingReactionIndex = message.reactions.findIndex(
+      (r) => r.userId.toString() === userId.toString(),
+    );
+
+    if (existingReactionIndex > -1) {
+      if (message.reactions[existingReactionIndex].emoji === emoji) {
+        // If it's the exact same emoji, remove it (toggle off)
+        message.reactions.splice(existingReactionIndex, 1);
+      } else {
+        // If it's a different emoji, update it
+        message.reactions[existingReactionIndex].emoji = emoji;
+      }
+    } else {
+      // Add new reaction
+      message.reactions.push({ userId, emoji });
+    }
+
+    await message.save();
+
+    // 🌟 POPULATE: Gather user profiles for the fresh layout response
+    const populatedMessage = await Message.findById(messageId).populate(
+      "reactions.userId",
+      "fullName profilePic",
+    );
+
+    const isGroup = message.groupId !== null;
+
+    if (isGroup) {
+      io.to(message.groupId.toString()).emit(
+        "reactionUpdated",
+        populatedMessage,
+      );
+    } else {
+      const recieverSocketId = userSocketMap[message.receiverId];
+      if (recieverSocketId) {
+        io.to(recieverSocketId).emit("reactionUpdated", populatedMessage);
+      }
+      const senderSocketId = userSocketMap[message.senderId];
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("reactionUpdated", populatedMessage);
+      }
+    }
+
+    res.status(200).json(populatedMessage);
+  } catch (error) {
+    console.error("Reaction Error:", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };

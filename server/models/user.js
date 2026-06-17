@@ -6,7 +6,8 @@ const userSchema = new mongoose.Schema(
         fullName : {type : String, required: true },
         password : {type : String, required: true , minlength:6}, 
         profilePic : {type : String, default : ""},
-        bio : {type : String}
+        bio : {type : String},
+        blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     },
     {timestamps : true}
 )

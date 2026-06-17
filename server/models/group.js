@@ -14,6 +14,10 @@ const groupSchema = new mongoose.Schema({
     members: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
+    }],
+    requests: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     }]
 }, { timestamps: true });
 

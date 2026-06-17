@@ -2,7 +2,17 @@ import React, { useContext, useState, useEffect } from "react";
 import assets from "../assets/assets";
 import { ChatContext } from "../../context/ChatContext";
 import { AuthContext } from "../../context/AuthContext";
-import { X, UserPlus, Search, Loader2 } from "lucide-react";
+import Swal from "sweetalert2"; // 🌟 Imported SweetAlert2 for modern custom modal confirmations
+import {
+  X,
+  UserPlus,
+  Search,
+  Loader2,
+  LogOut,
+  UserX,
+  UserCheck,
+} from "lucide-react";
+import AdminNotificationPanel from "./AdminNotificationPanel";
 
 const RightSidebar = () => {
   const {
@@ -13,9 +23,11 @@ const RightSidebar = () => {
     setShowInfoDrawer,
     addGroupMember,
     getNonGroupMembers,
+    leaveGroupAction,
+    toggleBlockUserAction,
   } = useContext(ChatContext);
 
-  const { logout, onlineUsers } = useContext(AuthContext);
+  const { onlineUsers, authUser } = useContext(AuthContext);
 
   const [allUsers, setAllUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -24,6 +36,14 @@ const RightSidebar = () => {
   const [loadingUserId, setLoadingUserId] = useState(null);
 
   const currentChat = selectedUser || selectedGroup;
+
+  // Check if the current single target user profile is in the authUser's blocked list
+  const isUserBlocked = selectedUser
+    ? authUser?.blockedUsers?.some(
+        (id) =>
+          id?.toString() === (selectedUser?._id || selectedUser)?.toString(),
+      )
+    : false;
 
   // Sync Non-Group Directory Setup
   useEffect(() => {
@@ -71,8 +91,47 @@ const RightSidebar = () => {
     setLoadingUserId(null);
   };
 
+  // 🌟 SWEETALERT ACTION HANDLER: LEAVE GROUP
+  const handleLeaveGroupConfirm = () => {
+    Swal.fire({
+      title: "Leave Group?",
+      text: "Are you sure you want to step away from this group workspace channel?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#ef4444", // Tailwind red-500
+      cancelButtonColor: "#374151", // Tailwind gray-700
+      confirmButtonText: "Yes, leave group",
+      background: "#182031", // Cohesive application background color matching matching drawer
+      color: "#ffffff",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        leaveGroupAction(selectedGroup._id);
+      }
+    });
+  };
+
+  // 🌟 SWEETALERT ACTION HANDLER: BLOCK / UNBLOCK TOGGLE
+  const handleBlockUserConfirm = () => {
+    const actionText = isUserBlocked ? "unblock" : "block";
+
+    Swal.fire({
+      title: `${actionText.charAt(0).toUpperCase() + actionText.slice(1)} User?`,
+      text: `Are you sure you want to ${actionText} ${selectedUser?.fullName || "this user"}?`,
+      icon: isUserBlocked ? "info" : "error",
+      showCancelButton: true,
+      confirmButtonColor: isUserBlocked ? "#10b981" : "#ef4444", // Emerald-500 vs Red-500
+      cancelButtonColor: "#374151",
+      confirmButtonText: `Yes, ${actionText}`,
+      background: "#182031",
+      color: "#ffffff",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        toggleBlockUserAction(selectedUser._id);
+      }
+    });
+  };
+
   // 📝 INTERNAL REUSABLE CORE RENDER
-  // Wrapped in a self-contained layout to prevent rendering overflow leaks
   const SidebarInnerUI = () => (
     <div className="flex flex-col h-full min-h-0 justify-between">
       {/* Scrollable Context Box */}
@@ -201,14 +260,31 @@ const RightSidebar = () => {
         </div>
       </div>
 
-      {/* Persistent Static Bottom Block */}
+      {/* REFACTORED PERSISTENT BOTTOM BLOCK SECTION */}
       <div className="w-full pt-4 flex justify-center shrink-0 border-t border-white/5 mt-auto bg-transparent">
-        <button
-          onClick={() => logout()}
-          className="bg-gradient-to-r from-blue-500 to-gray-600 text-sm py-2 px-10 rounded-full text-white font-medium w-full max-w-[220px] hover:opacity-90 transition-opacity"
-        >
-          Logout
-        </button>
+        {selectedGroup ? (
+          /* 1. Group Target: Leave Group Option */
+          <button
+            onClick={handleLeaveGroupConfirm}
+            className="flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-red-600 text-sm py-2 px-10 rounded-full text-white font-medium w-full max-w-[220px] hover:opacity-90 active:scale-95 transition-all"
+          >
+            <LogOut size={14} />
+            <span>Leave Group</span>
+          </button>
+        ) : (
+          /* 2. Direct Chat Target: Block / Unblock Atomic Toggle */
+          <button
+            onClick={handleBlockUserConfirm}
+            className={`flex items-center justify-center gap-2 text-sm py-2 px-10 rounded-full text-white font-medium w-full max-w-[220px] hover:opacity-90 active:scale-95 transition-all bg-gradient-to-r ${
+              isUserBlocked
+                ? "from-green-600 to-emerald-700"
+                : "from-red-500 to-red-600"
+            }`}
+          >
+            {isUserBlocked ? <UserCheck size={14} /> : <UserX size={14} />}
+            <span>{isUserBlocked ? "Unblock User" : "Block User"}</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -225,15 +301,14 @@ const RightSidebar = () => {
           />
 
           {/* Slide Up Panel Frame */}
-          <div
-            className="fixed bottom-0 left-0 right-0 max-h-[85vh] h-auto bg-[#182031] text-white rounded-t-2xl z-50 px-5 pt-2 pb-6 border-t border-gray-800 flex flex-col justify-start"
-          >
+          <div className="fixed bottom-0 left-0 right-0 max-h-[85vh] h-auto bg-[#182031] text-white rounded-t-2xl z-50 px-5 pt-2 pb-6 border-t border-gray-800 flex flex-col justify-start">
             {/* Swipe handle decoration / action bar block */}
             <div className="flex flex-col items-center py-2 shrink-0">
               <div
                 className="w-12 h-1.5 bg-gray-700 rounded-full mb-3 cursor-pointer"
                 onClick={() => setShowInfoDrawer(false)}
               />
+              <AdminNotificationPanel />
               <div className="w-full flex justify-between items-center pb-1">
                 <span className="text-sm font-semibold text-gray-300">
                   Details
@@ -247,7 +322,7 @@ const RightSidebar = () => {
               </div>
             </div>
 
-            {/* Core Content Box with layout boundaries explicitly defined */}
+            {/* Core Content Box */}
             <div className="flex-1 min-h-0 overflow-hidden mt-2">
               <SidebarInnerUI />
             </div>
@@ -258,6 +333,7 @@ const RightSidebar = () => {
       {/* 🖥️ STANDARD DESKTOP VIEW: FIXED COLUMN SEGMENT */}
       <div className="hidden xl:flex flex-col justify-between h-full w-[300px] min-w-[300px] max-w-[300px] bg-[#8196b2]/5 text-white border-l border-gray-800 p-5 shrink-0 overflow-hidden">
         <div className="flex-1 min-h-0">
+          <AdminNotificationPanel />
           <SidebarInnerUI />
         </div>
       </div>

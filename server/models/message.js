@@ -34,6 +34,33 @@ const messageSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    reactions: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        emoji: { type: String, required: true },
+      },
+    ], 
+    audio: {
+      type: String,
+      default: null,
+    },
+    video : {
+      type : String,
+      default: null,
+    },
+    isForwarded : {
+      type : Boolean,
+      default : false
+    },
+    forwardedFrom : {
+      type : mongoose.Schema.Types.ObjectId,
+      ref : "User",
+      default : null
+    }
   },
   { timestamps: true },
 );

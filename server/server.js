@@ -66,6 +66,10 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("joinGroupRequests", (groupId) => {
+    socket.join(`requests_${groupId}`);
+  });
+
   socket.on("messagesSeen", ({ chatId, user, isGroup }) => {
     if (!chatId || !user) return;
 
@@ -80,6 +84,44 @@ io.on("connection", (socket) => {
         io.to(targetSocketId).emit("userSeenReceipt", payload);
       }
     }
+  });
+
+  // 1. Handle the initialization request from the caller
+  socket.on("call-user-init", ({ toUserId, type }, callback) => {
+    // 🌟 CRITICAL: Look up the receiver's socket ID using your backend's tracking map
+    const targetSocketId = userSocketMap[toUserId];
+
+    if (targetSocketId) {
+      callback({ targetSocketId });
+    } else {
+      callback({ targetSocketId: null });
+    }
+  });
+
+  // 2. Forward the WebRTC cryptographic offer to the target receiver
+  socket.on("call-user", ({ toSocketId, offer, type, callerProfile }) => {
+    // Send it directly to the receiver's socket channel
+    io.to(toSocketId).emit("incoming-call", {
+      fromSocket: socket.id, // The caller's socket reference identifier
+      offer,
+      type,
+      callerProfile, // Passes the avatar, fullName, etc. to trigger the UI pop-up
+    });
+  });
+
+  // 3. Forward the receiver's accepted answer back to the original caller
+  socket.on("answer-call", ({ toSocket, answer }) => {
+    io.to(toSocket).emit("call-accepted", { answer });
+  });
+
+  // 4. Continuously route network ice candidates back and forth
+  socket.on("ice-candidate", ({ toSocket, candidate }) => {
+    io.to(toSocket).emit("ice-candidate", { candidate });
+  });
+
+  // 5. Handle call termination flags clean up
+  socket.on("end-call", ({ toSocket }) => {
+    io.to(toSocket).emit("call-ended");
   });
 
   socket.on("disconnect", () => {

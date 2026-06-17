@@ -1,6 +1,7 @@
 import Group from "../models/group.js";
-import User  from "../models/user.js";
+import User from "../models/user.js";
 import Message from "../models/message.js";
+import { io, userSocketMap } from "../server.js";
 
 export const createGroup = async (req, res) => {
   try {
@@ -39,10 +40,10 @@ export const createGroup = async (req, res) => {
 export const getGroups = async (req, res) => {
   try {
     const userId = req.user._id;
-    const groups = await Group.find({ members: userId }).populate(
-      "members",
-      "fullName profilePic bio",
-    );
+    const groups = await Group.find()
+      .populate("members", "fullName _id profilePic bio")
+      .populate("createdBy", "fullName profilePic bio")
+      .populate("requests", "fullName _id profilePic");
 
     const unseenGroups = {};
 
@@ -59,6 +60,8 @@ export const getGroups = async (req, res) => {
     });
 
     await Promise.all(promises);
+
+    // console.log("groups", groups);
 
     res.status(200).json({ success: true, groups, unseenGroups });
   } catch (error) {
@@ -93,7 +96,7 @@ export const markGroupAsSeen = async (req, res) => {
 export const addGroupMember = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const { userId } = req.body; // The ID typed into the frontend input
+    const { userId } = req.body;
 
     if (!userId) {
       return res.status(400).json({ message: "User ID is required" });
@@ -161,5 +164,113 @@ export const getNonGroupMembers = async (req, res) => {
   } catch (error) {
     console.error("Error in getNonGroupMembers controller:", error.message);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const leaveGroup = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user._id; // Extracted from your auth middleware
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    // Remove the user from the members array
+    group.members = group.members.filter(
+      (memberId) => memberId.toString() !== userId.toString(),
+    );
+
+    // Optional Edge Case: If the last member leaves, delete the group entirely
+    if (group.members.length === 0) {
+      await Group.findByIdAndDelete(groupId);
+      return res
+        .status(200)
+        .json({ message: "Left group, group disbanded as it was empty." });
+    }
+
+    const username = req.user.fullName;
+    const groupName = group.name;
+
+    await group.save();
+
+    // Pro-Tip: Notify other members via WebSockets that someone left
+    io.to(groupId).emit("userGroupDeleted", { groupName, username });
+
+    res.status(200).json({ message: "Successfully left the group", group });
+  } catch (error) {
+    console.error("Error leaving group:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Dispatch a request execution context
+export const requestToJoin = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user._id;
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ message: "Group not found" });
+
+    if (group.members.includes(userId)) {
+      return res.status(400).json({ message: "You are already a member" });
+    }
+
+    if (group.requests.includes(userId)) {
+      return res.status(400).json({ message: "Request already pending" });
+    }
+
+    group.requests.push(userId);
+    await group.save();
+
+    const adminId = group.createdBy;
+
+    const adminSocketId = userSocketMap[adminId];
+    if (adminSocketId) {
+      io.to(adminSocketId).emit("requestedToJoin");
+    }
+
+    res.status(200).json({ success: true, message: "Join request submitted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Process Administrative Request Resolutions
+export const handleJoinRequest = async (req, res) => {
+  try {
+    const { groupId, applicantId, action } = req.body;
+    const adminId = req.user._id;
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    if (!group.members.includes(adminId)) {
+      return res
+        .status(400)
+        .json({ error: "You are not authorized to perform this action" });
+    }
+
+    if (action === "accept") {
+      await Group.findByIdAndUpdate(groupId, {
+        $pull: { requests: applicantId },
+        $addToSet: { members: applicantId },
+      });
+    } else {
+      await Group.findByIdAndUpdate(groupId, {
+        $pull: { requests: applicantId },
+      });
+    }
+
+    const userSocketId = userSocketMap[applicantId];
+    if (userSocketId) {
+      io.to(userSocketId).emit("requestAction", { groupName: group.name, action });
+    }
+
+    res
+      .status(200)
+      .json({ success: true, message: `Request ${action}ed successfully` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };

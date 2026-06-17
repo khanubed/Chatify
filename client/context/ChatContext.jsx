@@ -23,7 +23,7 @@ export const ChatProvider = ({ children }) => {
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState(null);
 
-  const { socket, authUser } = useContext(AuthContext);
+  const { socket, authUser, setAuthUser } = useContext(AuthContext);
 
   const getUsers = async () => {
     try {
@@ -42,6 +42,7 @@ export const ChatProvider = ({ children }) => {
       const { data } = await API.get("/groups/all");
       if (data.success) {
         setGroups(data.groups);
+        console.log(data.groups);
         if (data.unseenGroups) setUnseenGroups(data.unseenGroups);
 
         if (socket && data.groups?.length > 0) {
@@ -84,21 +85,33 @@ export const ChatProvider = ({ children }) => {
       toast.error(error.response?.data?.message || "Failed to fetch messages");
     }
   };
-
-  const sendMessage = async (messageData) => {
+  const sendMessage = async (
+    formData,
+    customTargetId = null,
+    customIsGroup = null,
+  ) => {
     try {
-      const isGroupChat = !!selectedGroup;
-      const targetId = isGroupChat ? selectedGroup._id : selectedUser._id;
+      // 🌟 1. Dynamically choose between the active chat or a forward target
+      const isGroupChat =
+        customIsGroup !== null ? customIsGroup : !!selectedGroup;
+      const targetId =
+        customTargetId ||
+        (isGroupChat ? selectedGroup?._id : selectedUser?._id);
 
-      const payload = {
-        ...messageData,
-        isGroup: isGroupChat,
-        groupId: isGroupChat ? selectedGroup._id : null,
-      };
+      if (!targetId) return;
 
-      const { data } = await API.post(`/messages/send/${targetId}`, payload);
+      // Notice we still pass formData directly to your existing endpoint
+      const { data } = await API.post(`/messages/send/${targetId}`, formData);
+
       if (data.success) {
-        setMessages((prevMessages) => [...prevMessages, data.newMessage]);
+        // 🌟 2. SMART UX CHECK: Only append to the screen if it's the currently open chat!
+        const currentActiveId = selectedGroup?._id || selectedUser?._id;
+
+        if (targetId === currentActiveId) {
+          setMessages((prevMessages) => [...prevMessages, data.newMessage]);
+        } else {
+          toast.success("Message forwarded!");
+        }
       } else {
         toast.error(data.message || "Failed to send message");
       }
@@ -138,6 +151,60 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
+  const handleMessageReaction = async (messageId, emoji) => {
+    // 1. OPTIMISTIC UPDATE: Update UI instantly for a snappy feel
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) => {
+        if (msg._id !== messageId) return msg;
+
+        // Ensure reactions array exists
+        const reactions = msg.reactions || [];
+
+        // Find if current user already reacted
+        const existingIndex = reactions.findIndex(
+          (r) =>
+            (r.userId?._id || r.userId)?.toString() === authUser._id.toString(),
+        );
+
+        let updatedReactions = [...reactions];
+
+        if (existingIndex > -1) {
+          if (updatedReactions[existingIndex].emoji === emoji) {
+            // Remove reaction if clicked the exact same one again
+            updatedReactions.splice(existingIndex, 1);
+          } else {
+            // Swap emoji if they chose a different one
+            updatedReactions[existingIndex] = {
+              ...updatedReactions[existingIndex],
+              emoji,
+            };
+          }
+        } else {
+          // Brand new reaction
+          updatedReactions.push({ userId: authUser._id, emoji });
+        }
+
+        return { ...msg, reactions: updatedReactions };
+      }),
+    );
+
+    try {
+      const response = await API.patch(`/messages/${messageId}/reaction`, {
+        emoji,
+      });
+
+      console.log(response);
+      // 3. SOCKET BROADCAST (Optional): If using socket.io, notify other chat members
+      socket.emit("messageReaction", {
+        messageId,
+        reactions: response.data.reactions,
+      });
+    } catch (error) {
+      console.error("Failed to sync reaction to database:", error);
+      // Optional: Revert state or trigger a toast if the database update fails
+    }
+  };
+
   // Shared Seen Marker Trigger Block
   const markAsSeen = useCallback(
     async (chatId, isGroupChat = false) => {
@@ -152,7 +219,7 @@ export const ChatProvider = ({ children }) => {
             profilePic: authUser.profilePic,
             username: authUser.username,
           },
-          isGroup,
+          isGroup: isGroupChat,
         });
       } catch (err) {
         console.error("Failed executing visibility sequence:", err);
@@ -184,6 +251,95 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
+  const leaveGroupAction = async (groupId) => {
+    try {
+      await API.patch(`/groups/${groupId}/leave`);
+      getGroups();
+      setSelectedGroup(null);
+      setMessages([]);
+      // Optionally trigger a state refresh for your sidebar group listing array here
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to leave group");
+    }
+  };
+
+  const toggleBlockUserAction = async (userId) => {
+    try {
+      const response = await API.patch(`/auth/block/${userId}`);
+
+      // Update local authUser state with the new blockedUsers array returns
+      setAuthUser((prev) => ({
+        ...prev,
+        blockedUsers: response.data.blockedUsers,
+      }));
+
+      // Clean up current active window context view states
+      setSelectedUser(null);
+      setMessages([]);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to block user");
+    }
+  };
+
+  const requestToJoinGroup = async (groupId) => {
+    try {
+      const { data } = await API.post(`/groups/request/${groupId}`);
+      if (data.success) {
+        toast.success(data.message);
+        if (getGroups) getGroups(); // Refresh layouts mapping structures
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to submit request");
+    }
+  };
+
+  const handleAdminAction = async (groupId, applicantId, action) => {
+    try {
+      const { data } = await API.post(`/groups/resolve-request`, {
+        groupId,
+        applicantId,
+        action,
+      });
+      if (data.success) {
+        toast.success(data.message);
+        if (getGroups) getGroups();
+      }
+
+      await getGroups();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to resolve action");
+    }
+  };
+  const forwardMessage = async (messageToForward, targetId, isGroupTarget) => {
+    try {
+      const formData = new FormData();
+
+      // 🌟 Append text content and core meta configurations
+      formData.append("text", messageToForward.text || "");
+      formData.append("isGroup", isGroupTarget ? "true" : "false");
+      formData.append("isForwarded", "true"); // Tells database to attach the flag
+
+      if (isGroupTarget) {
+        formData.append("groupId", targetId);
+      }
+
+      // 🌟 Pass existing asset strings directly instead of binary file chunks
+      if (messageToForward.image)
+        formData.append("image", messageToForward.image);
+      if (messageToForward.audio)
+        formData.append("audio", messageToForward.audio);
+      if (messageToForward.video)
+        formData.append("video", messageToForward.video);
+
+      // 🌟 Route it right through your existing centralized engine!
+      await sendMessage(formData, targetId, isGroupTarget);
+      return true;
+    } catch (error) {
+      console.error("Error packaging forward payload:", error);
+      return false;
+    }
+  };
+  
   useEffect(() => {
     if (!socket || groups.length === 0) return;
     groups.forEach((group) => {
@@ -191,18 +347,22 @@ export const ChatProvider = ({ children }) => {
     });
   }, [socket, groups]);
 
-  ///TEbjfndfdj
-
-  useEffect(() => {
-    console.log(messages);
-  }, [messages]);
-
   // Real-Time Socket Event Handling Layer
   useEffect(() => {
     if (!socket) return;
+    const triggerNotification = (message, isGroupMsg) => {
+      const senderName =
+        message.senderId?.fullName || message.senderId?.name || "Someone";
+      const notificationBody = message.text || "📷 Sent an attachment";
+      const title = isGroupMsg
+        ? `New message in Group`
+        : `New message from ${senderName}`;
+
+      toast(`${title}: ${notificationBody}`);
+    };
 
     const handleNewMessage = (newMessage) => {
-      // 🌟 Extract the actual string ID safely whether senderId is populated or raw
+      console.log(newMessage);
       const rawSenderId = newMessage.senderId?._id || newMessage.senderId;
       const senderUserIdString = rawSenderId?.toString();
       const authUserIdString = authUser?._id?.toString();
@@ -215,16 +375,21 @@ export const ChatProvider = ({ children }) => {
           const incomingTargetId = newMessage.groupId?.toString();
 
           if (currentGroup && incomingTargetId === currentActiveId) {
-            // 🌟 Fix sender identity block check using extracted string IDs
             if (senderUserIdString === authUserIdString) return currentGroup;
 
             setMessages((prevMessages) => [...prevMessages, newMessage]);
             markAsSeen(incomingTargetId, true); // Sync group seen live
           } else {
+            // 🌟 NOT FROM SELECTED GROUP: Increment count and trigger notification
             setUnseenGroups((prevUnseenGroups) => ({
               ...prevUnseenGroups,
               [incomingTargetId]: (prevUnseenGroups[incomingTargetId] || 0) + 1,
             }));
+
+            // Only notify if the background group message wasn't sent by the authUser themselves
+            if (senderUserIdString !== authUserIdString) {
+              triggerNotification(newMessage, true);
+            }
           }
           return currentGroup;
         });
@@ -232,7 +397,6 @@ export const ChatProvider = ({ children }) => {
       }
 
       // 2. PRIVATE CHAT HANDLING
-      // 🌟 Drop message early if I am the sender (since my sendMessage function already pushed it locally)
       if (senderUserIdString === authUserIdString) return;
 
       setSelectedUser((currentUser) => {
@@ -242,11 +406,14 @@ export const ChatProvider = ({ children }) => {
           setMessages((prevMessages) => [...prevMessages, newMessage]);
           markAsSeen(senderUserIdString, false); // Sync private seen live
         } else {
+          // 🌟 NOT FROM SELECTED USER: Increment count and trigger notification
           setUnseenMessages((prevUnseenMessages) => ({
             ...prevUnseenMessages,
             [senderUserIdString]:
               (prevUnseenMessages[senderUserIdString] || 0) + 1,
           }));
+
+          triggerNotification(newMessage, false);
         }
         return currentUser;
       });
@@ -286,11 +453,34 @@ export const ChatProvider = ({ children }) => {
 
     socket.on("newMessage", handleNewMessage);
 
+    socket.on("requestAction", ({ groupName, action }) => {
+      getGroups();
+      if (action === "accept") {
+        toast.success(`${groupName} request accepted `);
+      } else {
+        toast.error(`${groupName} request rejected `);
+      }
+    });
+
+    socket.on("requestedToJoin", () => {
+      (toast.success("New join request received"), getGroups());
+    });
+
+    socket.on("reactionUpdated", (updatedMessage) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg._id === updatedMessage._id ? updatedMessage : msg,
+        ),
+      );
+    });
+
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("messageUpdated");
       socket.off("messageRemoved");
       socket.off("userSeenReceipt");
+      socket.off("requestAction");
+      socket.off("reactionUpdated");
     };
   }, [socket, authUser?._id, markAsSeen]);
 
@@ -322,6 +512,12 @@ export const ChatProvider = ({ children }) => {
         markAsSeen,
         replyToMessage,
         setReplyToMessage,
+        handleMessageReaction,
+        leaveGroupAction,
+        toggleBlockUserAction,
+        handleAdminAction,
+        requestToJoinGroup,
+        forwardMessage,
       }}
     >
       {children}
