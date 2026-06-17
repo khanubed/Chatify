@@ -175,6 +175,8 @@ export const CallProvider = ({ children }) => {
     }
   };
 
+  
+
   // 🌟 FIX 2 (Cont.): Empty dependencies keep this listener static, solid, and safe from channel dropouts
   useEffect(() => {
     if (!socket) return;

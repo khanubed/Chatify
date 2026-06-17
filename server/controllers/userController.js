@@ -113,12 +113,10 @@ export const toggleBlockUser = async (req, res) => {
     const isAlreadyBlocked = user.blockedUsers.includes(userIdToBlock);
 
     if (isAlreadyBlocked) {
-      // Unblock: Pull user out of the array
       user.blockedUsers = user.blockedUsers.filter(
-        (id) => id.toString() !== userIdToBlock,
+        (id) => id.toString() !== userIdToBlock.toString(),
       );
     } else {
-      // Block: Push user into the array
       user.blockedUsers.push(userIdToBlock);
     }
 

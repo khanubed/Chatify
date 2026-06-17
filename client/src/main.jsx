@@ -8,7 +8,6 @@ import { CallProvider } from "../context/CallContext.jsx";
 
 createRoot(document.getElementById("root")).render(
   <BrowserRouter>
-    // inside your Provider wrap architecture layout:
     <AuthProvider>
       <ChatProvider>
         <CallProvider>
