@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { CallContext } from "../../../context/CallContext";
 import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from "lucide-react";
 import assets from "../../assets/assets";
@@ -21,6 +21,27 @@ const CallInterface = () => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
+  // 🌟 NEW: Track call duration in seconds
+  const [callDuration, setCallDuration] = useState(0);
+
+  // 🌟 NEW: Real-time ticker effect that activates precisely when the call connects
+  useEffect(() => {
+    let ticker = null;
+
+    if (callState === "ON_CALL") {
+      setCallDuration(0); // Reset timer on a fresh connection
+      ticker = setInterval(() => {
+        setCallDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0); // Flush time data when idle/ringing/dialing
+    }
+
+    return () => {
+      if (ticker) clearInterval(ticker);
+    };
+  }, [callState]);
+
   // Attach tracks to HTML Video instances when stream updates occur
   useEffect(() => {
     if (localVideoRef.current && localStream) {
@@ -34,11 +55,17 @@ const CallInterface = () => {
     }
   }, [remoteStream, callState]);
 
+  // 🌟 NEW: Helper utility to format raw seconds into classic MM:SS presentation
+  const formatTime = (totalSeconds) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
   if (callState === "IDLE") return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center text-white backdrop-blur-xl animate-in fade-in duration-200">
-      
       {/* 1. Ringing & Dialing Banner Layout States */}
       {(callState === "DIALING" || callState === "RINGING") && (
         <div className="flex flex-col items-center gap-6 animate-pulse">
@@ -51,7 +78,9 @@ const CallInterface = () => {
             {partnerDetails?.fullName || partnerDetails?.name || "User"}
           </h2>
           <p className="text-gray-400 text-sm tracking-wider uppercase font-light">
-            {callState === "DIALING" ? "Dialing outbound line..." : `Incoming ${callType} request...`}
+            {callState === "DIALING"
+              ? "Dialing outbound line..."
+              : `Incoming ${callType} request...`}
           </p>
         </div>
       )}
@@ -68,7 +97,12 @@ const CallInterface = () => {
                 playsInline
                 className="w-full h-full object-cover"
               />
-              
+
+              {/* 🌟 NEW: Floating overlay call timer container for Video streams */}
+              <div className="absolute top-6 left-6 bg-slate-900/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-xs font-mono tracking-wider tabular-nums text-emerald-400 z-10 shadow-lg">
+                {formatTime(callDuration)}
+              </div>
+
               {/* Floating Pip Panel showcasing local camera transmission logic */}
               {!isCamOff && (
                 <div className="absolute top-6 right-6 w-32 md:w-48 aspect-[9/16] rounded-xl overflow-hidden border border-white/20 shadow-xl bg-slate-900 z-10">
@@ -90,8 +124,14 @@ const CallInterface = () => {
                 alt="Partner profile"
                 className="w-28 h-28 rounded-full object-cover ring-4 ring-green-500/40"
               />
-              <span className="text-xl font-medium">{partnerDetails?.fullName}</span>
-              <span className="text-green-400 text-xs tracking-widest animate-bounce">0:00 Connected</span>
+              <span className="text-xl font-medium">
+                {partnerDetails?.fullName}
+              </span>
+
+              {/* 🌟 FIXED: Time counter tracking dynamically using tabular digits to block shifting */}
+              <span className="text-emerald-400 text-sm font-mono tracking-widest tabular-nums bg-emerald-500/10 px-4 py-1 rounded-full border border-emerald-500/20 shadow-inner">
+                {formatTime(callDuration)} Connected
+              </span>
             </div>
           )}
         </div>
@@ -104,7 +144,9 @@ const CallInterface = () => {
             <button
               onClick={toggleMute}
               className={`p-3.5 rounded-full transition-all active:scale-90 ${
-                isMuted ? "bg-red-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"
+                isMuted
+                  ? "bg-red-500 text-white"
+                  : "bg-white/10 text-gray-300 hover:bg-white/20"
               }`}
             >
               {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
@@ -114,7 +156,9 @@ const CallInterface = () => {
               <button
                 onClick={toggleCamera}
                 className={`p-3.5 rounded-full transition-all active:scale-90 ${
-                  isCamOff ? "bg-red-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"
+                  isCamOff
+                    ? "bg-red-500 text-white"
+                    : "bg-white/10 text-gray-300 hover:bg-white/20"
                 }`}
               >
                 {isCamOff ? <VideoOff size={20} /> : <Video size={20} />}

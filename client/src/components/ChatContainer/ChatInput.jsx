@@ -1,29 +1,107 @@
-import React, { useState, useRef } from "react";
-import { CornerUpLeft, X, Mic, Square, Send, Play } from "lucide-react";
+import React, { useState, useRef, useContext, useEffect } from "react";
+import { CornerUpLeft, X, Mic, Send, Play } from "lucide-react";
+import { ChatContext } from "../../../context/ChatContext";
 import toast from "react-hot-toast";
 import assets from "../../assets/assets";
 
-const ChatInput = ({
-  input,
-  setInput,
-  mediaPreviewUrl, // Updated prop
-  mediaType, // Updated prop
-  replyToMessage,
-  setReplyToMessage,
-  handleCancelMedia, // Updated prop
-  handleMediaSelect, // Updated prop
-  handleDispatchMessage,
-  fileInputRef,
-}) => {
-  // 🌟 Voice Recording States
+const ChatInput = () => {
+  const {
+    selectedGroup,
+    selectedUser,
+    replyToMessage,
+    setReplyToMessage,
+    sendMessage,
+    sendTypingStatus,
+  } = useContext(ChatContext);
+
+  const isGroup = !!selectedGroup;
+
+  const [localInput, setLocalInput] = useState("");
+  const [selectedMediaFile, setSelectedMediaFile] = useState(null);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState(null);
+  const [mediaType, setMediaType] = useState(null);
+
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-  // --- VOICE RECORDING LOGIC ---
+  // 🌟 NEW: Typing state engine references to manage local debouncing
+  const localTypingRef = useRef(false);
+  const typingTimeoutRef = useRef(null);
+
+  // 🌟 NEW: Wipe remote indicators instantly if the user switches rooms abruptly
+  useEffect(() => {
+    if (localTypingRef.current) {
+      sendTypingStatus(false);
+      localTypingRef.current = false;
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    setLocalInput("");
+  }, [selectedUser?._id, selectedGroup?._id]);
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setLocalInput(value);
+
+    // Trigger instant signal upon keypress if inactive
+    if (!localTypingRef.current && value.trim().length > 0) {
+      localTypingRef.current = true;
+      sendTypingStatus(true);
+    }
+
+    // Standard ticker window resetting execution engine
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    typingTimeoutRef.current = setTimeout(() => {
+      if (localTypingRef.current) {
+        localTypingRef.current = false;
+        sendTypingStatus(false);
+      }
+    }, 1500);
+  };
+
+  const handleMediaSelect = (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const isImage = file.type.startsWith("image/");
+
+    const isVideo = file.type.startsWith("video/");
+
+    if (!isImage && !isVideo) {
+      toast.error("Please select a valid image or video file");
+
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      setSelectedMediaFile(file);
+
+      setMediaPreviewUrl(reader.result);
+
+      setMediaType(isImage ? "image" : "video");
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const handleCancelMedia = () => {
+    setSelectedMediaFile(null);
+
+    setMediaPreviewUrl(null);
+
+    setMediaType(null);
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -36,8 +114,8 @@ const ChatInput = ({
 
       mediaRecorderRef.current.start();
       setIsRecording(true);
-
       setRecordingTime(0);
+
       timerRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
@@ -54,7 +132,6 @@ const ChatInput = ({
         });
         streamTracksStop();
 
-        // If we clicked send while recording, dispatch immediately
         if (shouldSend) {
           handleDispatchMessage(null, audioBlob);
         }
@@ -82,9 +159,41 @@ const ChatInput = ({
       .forEach((track) => track.stop());
   };
 
+  const handleDispatchMessage = async (e, customAudioBlob = null) => {
+    if (e) e.preventDefault();
+    const cleanText = localInput.trim();
+
+    if (!cleanText && !selectedMediaFile && !customAudioBlob) return;
+
+    // 🌟 NEW: Force state termination upon message transmission
+    if (localTypingRef.current) {
+      localTypingRef.current = false;
+      sendTypingStatus(false);
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    const formData = new FormData();
+    formData.append("text", cleanText);
+    formData.append("isGroup", isGroup);
+
+    if (isGroup) formData.append("groupId", selectedGroup._id);
+    if (replyToMessage) formData.append("parent", replyToMessage._id);
+
+    if (customAudioBlob) {
+      formData.append("file", customAudioBlob, "voice-message.webm");
+    } else if (selectedMediaFile) {
+      formData.append("file", selectedMediaFile);
+    }
+
+    setLocalInput("");
+    handleCancelMedia();
+    setReplyToMessage(null);
+
+    await sendMessage(formData);
+  };
+
   return (
     <div className="relative w-full flex flex-col bg-transparent shrink-0">
-      {/* Live Reply Context Preview Bar */}
       {replyToMessage && (
         <div className="flex items-center justify-between p-2.5 bg-gray-900/90 border border-gray-700 backdrop-blur-md rounded-t-xl mx-3 animate-fade-in shadow-xl text-xs">
           <div className="flex items-center gap-2 overflow-hidden truncate">
@@ -111,7 +220,6 @@ const ChatInput = ({
         </div>
       )}
 
-      {/* Media (Image/Video) Preview Panel */}
       {mediaPreviewUrl && (
         <div className="flex items-center gap-3 p-3 bg-gray-900/80 border border-gray-700 backdrop-blur-md rounded-t-xl mx-3 animate-fade-in shadow-xl">
           <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-600 shrink-0 bg-black flex items-center justify-center">
@@ -130,10 +238,10 @@ const ChatInput = ({
                 <Play
                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
                   size={20}
+                  // Clean form helper update
                 />
               </div>
             )}
-
             <button
               type="button"
               onClick={handleCancelMedia}
@@ -153,9 +261,7 @@ const ChatInput = ({
         </div>
       )}
 
-      {/* Bottom Input Area */}
       <div className="flex items-center gap-2 p-3 bg-transparent">
-        {/* 🌟 Voice Record State UI vs Standard Text Input */}
         {isRecording ? (
           <div className="flex-1 flex items-center justify-between bg-red-500/10 border border-red-500/30 px-4 py-2.5 rounded-full text-white text-sm transition-all animate-fade-in">
             <div className="flex items-center gap-2 animate-pulse">
@@ -180,8 +286,8 @@ const ChatInput = ({
             }`}
           >
             <input
-              onChange={(e) => setInput(e.target.value)}
-              value={input}
+              onChange={handleInputChange} // 🌟 UPDATED: Triggers debounce pipeline
+              value={localInput}
               onKeyDown={(e) =>
                 e.key === "Enter" ? handleDispatchMessage(e) : null
               }
@@ -191,28 +297,26 @@ const ChatInput = ({
               }
               className="flex-1 text-sm p-3 bg-transparent border-none outline-none placeholder-gray-400 text-white"
             />
-
             <input
               ref={fileInputRef}
               onChange={handleMediaSelect}
               type="file"
               id="chat-media"
-              accept="image/png, image/jpeg, video/mp4, video/webm" // 🌟 Accept both now
+              accept="image/png, image/jpeg, video/mp4, video/webm"
               hidden
             />
             <label htmlFor="chat-media" className="shrink-0 p-1">
               <img
                 src={assets.gallery_icon}
-                alt="gallery handle"
+                alt="gallery"
                 className="w-5 mr-1 cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
               />
             </label>
           </div>
         )}
 
-        {/* 🌟 Conditional Send / Record Button Layout */}
         <div className="flex items-center gap-1 shrink-0 ml-1">
-          {input.trim() || mediaPreviewUrl ? (
+          {localInput.trim() || mediaPreviewUrl ? (
             <img
               onClick={handleDispatchMessage}
               src={assets.send_button}

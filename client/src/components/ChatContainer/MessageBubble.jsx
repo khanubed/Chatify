@@ -18,6 +18,7 @@ import ForwardModal from "./ForwardModal"; // 🌟 Imported ForwardModal
 import { Plyr } from "plyr-react";
 import "../../../node_modules/plyr-react/dist/plyr.css";
 import VoiceNotePlayer from "./VoiceNotePlayer";
+import CallLogMessage from "./CallLogMessage";
 
 const EMOJI_OPTIONS = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
 
@@ -44,6 +45,8 @@ const MessageBubble = ({
   const [showForwardModal, setShowForwardModal] = useState(false); // 🌟 State to toggle Forward Modal
   const longPressTimer = useRef(null);
   const [reactionModalData, setReactionModalData] = useState(null);
+
+  const isCallLog = msg.messageType === "call" && !msg.isDeleted;
 
   const isMyMessage =
     msg.senderId?._id === authUser._id || msg.senderId === authUser._id;
@@ -109,6 +112,12 @@ const MessageBubble = ({
       }
     }
   };
+
+  if (isCallLog) {
+    return (
+      <CallLogMessage msg={msg}/>
+    );
+  }
 
   return (
     <div

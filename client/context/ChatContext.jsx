@@ -339,7 +339,23 @@ export const ChatProvider = ({ children }) => {
       return false;
     }
   };
-  
+
+  const sendTypingStatus = (isTyping) => {
+    if (!socket) return;
+    if (selectedGroup) {
+      socket.emit(isTyping ? "typing" : "stop-typing", {
+        groupId: selectedGroup._id,
+        isGroup: true,
+        senderName: authUser?.fullName || authUser?.name || "Someone",
+      });
+    } else if (selectedUser) {
+      socket.emit(isTyping ? "typing" : "stop-typing", {
+        receiverId: selectedUser._id,
+        isGroup: false,
+      });
+    }
+  };
+
   useEffect(() => {
     if (!socket || groups.length === 0) return;
     groups.forEach((group) => {
@@ -474,6 +490,33 @@ export const ChatProvider = ({ children }) => {
       );
     });
 
+    socket.on("displayTyping", ({ senderId, groupId, isGroup, senderName }) => {
+    const chatId = isGroup ? groupId : senderId;
+    setTypingStatus((prev) => ({
+      ...prev,
+      [chatId]: isGroup
+        ? [...(prev[chatId] || []).filter((name) => name !== senderName), senderName]
+        : true,
+    }));
+  });
+
+  socket.on("hideTyping", ({ senderId, groupId, isGroup, senderName }) => {
+    const chatId = isGroup ? groupId : senderId;
+    setTypingStatus((prev) => {
+      if (isGroup) {
+        const activeGroupTypers = prev[chatId] || [];
+        return {
+          ...prev,
+          [chatId]: activeGroupTypers.filter((name) => name !== senderName),
+        };
+      } else {
+        const updatedStatus = { ...prev };
+        delete updatedStatus[chatId];
+        return updatedStatus;
+      }
+    });
+  });
+
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("messageUpdated");
@@ -481,6 +524,8 @@ export const ChatProvider = ({ children }) => {
       socket.off("userSeenReceipt");
       socket.off("requestAction");
       socket.off("reactionUpdated");
+      socket.off("displayTyping");
+      socket.off("hideTyping");
     };
   }, [socket, authUser?._id, markAsSeen]);
 
@@ -518,6 +563,9 @@ export const ChatProvider = ({ children }) => {
         handleAdminAction,
         requestToJoinGroup,
         forwardMessage,
+        sendMessage,
+        typingStatus,
+        setTypingStatus
       }}
     >
       {children}

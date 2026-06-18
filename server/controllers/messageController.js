@@ -86,19 +86,18 @@ export const getMessages = async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 };
-
 export const sendMessage = async (req, res) => {
   try {
-    // 🌟 Added isForwarded, image, audio, video to destructuring from req.body
-    const { text, isGroup, groupId, parent, isForwarded, image, audio, video } =
+    // 🌟 FIX: Added messageType to the destructured body parameters
+    const { text, isGroup, groupId, parent, isForwarded, image, audio, video, messageType } =
       req.body;
     const receiverId = req.params.id;
     const senderId = req.user._id;
 
     const parsedIsGroup = isGroup === "true" || isGroup === true;
-    const parsedIsForwarded = isForwarded === "true" || isForwarded === true; // 🌟 Parse forward flag
+    const parsedIsForwarded = isForwarded === "true" || isForwarded === true;
 
-    // 🌟 MUTUAL BLOCK CHECK PROTECTION LAYER (Direct Chats Only)
+    // MUTUAL BLOCK CHECK PROTECTION LAYER (Direct Chats Only)
     if (!parsedIsGroup) {
       const [receiver, sender] = await Promise.all([
         User.findById(receiverId),
@@ -111,7 +110,6 @@ export const sendMessage = async (req, res) => {
           .json({ success: false, message: "User profile not found" });
       }
 
-      // 1. Check if the receiver has blocked the sender
       const isSenderBlocked = receiver.blockedUsers?.some(
         (id) => id && id.toString() === senderId.toString(),
       );
@@ -123,7 +121,6 @@ export const sendMessage = async (req, res) => {
         });
       }
 
-      // 2. Check if the sender has blocked the receiver
       const hasBlockedReceiver = sender.blockedUsers?.some(
         (id) => id && id.toString() === receiverId.toString(),
       );
@@ -131,19 +128,16 @@ export const sendMessage = async (req, res) => {
       if (hasBlockedReceiver) {
         return res.status(400).json({
           success: false,
-          message:
-            "Message not sent. You must unblock this user to send a message.",
+          message: "Message not sent. You must unblock this user to send a message.",
         });
       }
     }
 
-    // 🌟 MULTIMEDIA PROCESSING LAYER (Updated for Forwards)
-    // Initialize URLs with existing assets sent in req.body (for forwarded media)
+    // MULTIMEDIA PROCESSING LAYER
     let imageURL = image || null;
     let audioURL = audio || null;
     let videoURL = video || null;
 
-    // If a new file is uploaded, process it normally via Cloudinary (overriding body URLs if any)
     if (req.file) {
       const uploadResult = await uploadToCloudinary(
         req.file.buffer,
@@ -153,7 +147,7 @@ export const sendMessage = async (req, res) => {
 
       if (req.file.mimetype.startsWith("image/")) {
         imageURL = secureUrl;
-        audioURL = null; // Clear others just in case of mixed payloads
+        audioURL = null;
         videoURL = null;
       } else if (req.file.mimetype.startsWith("audio/")) {
         audioURL = secureUrl;
@@ -177,7 +171,8 @@ export const sendMessage = async (req, res) => {
       groupId: parsedIsGroup ? groupId : null,
       parent: parent && parent !== "null" ? parent : null,
       seenBy: [senderId],
-      isForwarded: parsedIsForwarded, // 🌟 Saves the forward state to the DB
+      isForwarded: parsedIsForwarded,
+      messageType: messageType || "text", // 🌟 FIX: Persists 'call' or default text state to DB schema
     });
 
     // Hydrate references for instant UI rendering

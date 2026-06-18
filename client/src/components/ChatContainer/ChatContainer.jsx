@@ -1,14 +1,7 @@
-import React, {
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-} from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import assets from "../../assets/assets";
 import { AuthContext } from "../../../context/AuthContext";
 import { ChatContext } from "../../../context/ChatContext";
-import toast from "react-hot-toast";
 
 // Sub-components
 import ChatHeader from "./ChatHeader";
@@ -16,7 +9,7 @@ import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import ZoomedImageModal from "./ZoomedImageModal";
 import SeenModal from "./SeenModal";
-import CallInterface from "./CallInterface"; // 🌟 Imported Calling UI Window Block
+import CallInterface from "./CallInterface";
 
 const ChatContainer = () => {
   const { authUser, onlineUsers, socket } = useContext(AuthContext);
@@ -26,20 +19,13 @@ const ChatContainer = () => {
     setSelectedUser,
     selectedGroup,
     setSelectedGroup,
-    sendMessage,
     getMessages,
     deleteMessage,
     editMessage,
     markAsSeen,
     setShowInfoDrawer,
-    replyToMessage,
     setReplyToMessage,
   } = useContext(ChatContext);
-
-  const [input, setInput] = useState("");
-  const [selectedMediaFile, setSelectedMediaFile] = useState(null);
-  const [mediaPreviewUrl, setMediaPreviewUrl] = useState(null);
-  const [mediaType, setMediaType] = useState(null);
 
   const [activeMobileMenuId, setActiveMobileMenuId] = useState(null);
   const [zoomedImage, setZoomedImage] = useState(null);
@@ -48,20 +34,13 @@ const ChatContainer = () => {
   const [seenModalList, setSeenModalList] = useState(null);
 
   const scrollEnd = useRef(null);
-  const fileInputRef = useRef(null);
 
   const currentChat = selectedUser || selectedGroup;
   const isGroup = !!selectedGroup;
+  const targetRoomId = selectedUser?._id || selectedGroup?._id;
 
-  const handleCancelMedia = useCallback(() => {
-    setSelectedMediaFile(null);
-    setMediaPreviewUrl(null);
-    setMediaType(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }, []);
-
+  // Handles pristine room initialization and history fetches
   useEffect(() => {
-    const targetRoomId = selectedUser?._id || selectedGroup?._id;
     if (!targetRoomId || !socket) return;
 
     const fetchChatHistory = async () => {
@@ -81,22 +60,14 @@ const ChatContainer = () => {
     };
 
     fetchChatHistory();
-    handleCancelMedia();
-    setInput("");
     setReplyToMessage(null);
     setActiveMobileMenuId(null);
     setZoomedImage(null);
     setEditingMessageId(null);
     setShowInfoDrawer(false);
-  }, [
-    selectedUser?._id,
-    selectedGroup?._id,
-    socket,
-    markAsSeen,
-    setReplyToMessage,
-    handleCancelMedia,
-    setShowInfoDrawer,
-  ]);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetRoomId, socket]);
 
   useEffect(() => {
     if (scrollEnd.current && messages.length > 0) {
@@ -104,58 +75,11 @@ const ChatContainer = () => {
     }
   }, [messages.length]);
 
-  const handleDispatchMessage = async (e, customAudioBlob = null) => {
-    if (e) e.preventDefault();
-    const cleanText = input.trim();
-
-    if (!cleanText && !selectedMediaFile && !customAudioBlob) return;
-
-    const formData = new FormData();
-    formData.append("text", cleanText);
-    formData.append("isGroup", isGroup);
-
-    if (isGroup) formData.append("groupId", selectedGroup._id);
-    if (replyToMessage) formData.append("parent", replyToMessage._id);
-
-    if (customAudioBlob) {
-      formData.append("file", customAudioBlob, "voice-message.webm");
-    } else if (selectedMediaFile) {
-      formData.append("file", selectedMediaFile);
-    }
-
-    setInput("");
-    handleCancelMedia();
-    setReplyToMessage(null);
-
-    await sendMessage(formData);
-  };
-
   const handleSaveEdit = async (msgId) => {
     if (!editInput.trim()) return;
     await editMessage(msgId, editInput.trim());
     setEditingMessageId(null);
     setEditInput("");
-  };
-
-  const handleMediaSelect = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const isImage = file.type.startsWith("image/");
-    const isVideo = file.type.startsWith("video/");
-
-    if (!isImage && !isVideo) {
-      toast.error("Please select a valid image or video file");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setSelectedMediaFile(file);
-      setMediaPreviewUrl(reader.result);
-      setMediaType(isImage ? "image" : "video");
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleCloseChat = () => {
@@ -176,6 +100,7 @@ const ChatContainer = () => {
             handleCloseChat={handleCloseChat}
           />
 
+          {/* Chat Stream Window Block */}
           <div className="flex-1 overflow-y-auto z-20 p-3 pb-2 flex flex-col custom-scrollbar gap-1">
             {messages.map((msg, index) => (
               <MessageBubble
@@ -202,18 +127,9 @@ const ChatContainer = () => {
             <div ref={scrollEnd} className="h-2 shrink-0"></div>
           </div>
 
-          <ChatInput
-            input={input}
-            setInput={setInput}
-            mediaPreviewUrl={mediaPreviewUrl}
-            mediaType={mediaType}
-            replyToMessage={replyToMessage}
-            setReplyToMessage={setReplyToMessage}
-            handleCancelMedia={handleCancelMedia}
-            handleMediaSelect={handleMediaSelect}
-            handleDispatchMessage={handleDispatchMessage}
-            fileInputRef={fileInputRef}
-          />
+          {/* 🌟 KEY TRICK: Providing targetRoomId as a key forces React to reset 
+              all state inside ChatInput automatically when switching chats */}
+          <ChatInput key={targetRoomId} />
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-2 text-gray-500 bg-white/5 h-full w-full">
@@ -232,8 +148,6 @@ const ChatContainer = () => {
         seenModalList={seenModalList}
         setSeenModalList={setSeenModalList}
       />
-
-      {/* 🌟 NEW: Active P2P Audio & Video Overlay Engine Sheet */}
       <CallInterface />
     </>
   );

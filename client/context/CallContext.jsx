@@ -1,6 +1,13 @@
-import React, { createContext, useState, useEffect, useRef, useContext } from "react";
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+} from "react";
 import { AuthContext } from "./AuthContext";
 import toast from "react-hot-toast";
+import { ChatContext } from "./ChatContext";
 
 export const CallContext = createContext();
 
@@ -12,9 +19,9 @@ export const CallProvider = ({ children }) => {
   const { authUser, socket } = useContext(AuthContext);
 
   const [callState, setCallState] = useState("IDLE"); // IDLE, DIALING, RINGING, ON_CALL
-  const [callType, setCallType] = useState(null); 
-  const [partnerDetails, setPartnerDetails] = useState(null); 
-  
+  const [callType, setCallType] = useState(null);
+  const [partnerDetails, setPartnerDetails] = useState(null);
+
   const [isMuted, setIsMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
 
@@ -24,7 +31,9 @@ export const CallProvider = ({ children }) => {
 
   const peerConnectionRef = useRef(null);
   const partnerSocketIdRef = useRef(null);
-  
+
+  const { sendMessage } = useContext(ChatContext);
+
   // 🌟 FIX 2: Maintain a ref copy of callState to keep socket closures perfectly fresh without rebinding
   const callStateRef = useRef("IDLE");
   useEffect(() => {
@@ -56,13 +65,22 @@ export const CallProvider = ({ children }) => {
     try {
       const constraints = {
         audio: true,
-        video: type === "video" ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" } : false,
+        video:
+          type === "video"
+            ? {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: "user",
+              }
+            : false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       setLocalStream(stream);
       return stream;
     } catch (err) {
-      toast.error("Media permission denied. Unable to access hardware peripherals.");
+      toast.error(
+        "Media permission denied. Unable to access hardware peripherals.",
+      );
       terminateCallPipeline();
       throw err;
     }
@@ -83,7 +101,10 @@ export const CallProvider = ({ children }) => {
 
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
-        socket.emit("ice-candidate", { toSocket: targetSocketId, candidate: event.candidate });
+        socket.emit("ice-candidate", {
+          toSocket: targetSocketId,
+          candidate: event.candidate,
+        });
       }
     };
 
@@ -92,34 +113,38 @@ export const CallProvider = ({ children }) => {
 
   const startCall = async (targetUser, type) => {
     if (!socket) return toast.error("Socket server connection disrupted.");
-    
+
     setCallState("DIALING");
     setCallType(type);
     setPartnerDetails(targetUser);
 
     try {
       const stream = await captureLocalMedia(type);
-      
-      socket.emit("call-user-init", { toUserId: targetUser._id, type }, async (response) => {
-        if (!response || !response.targetSocketId) {
-          toast.error("User is offline or unavailable.");
-          terminateCallPipeline();
-          return;
-        }
 
-        partnerSocketIdRef.current = response.targetSocketId;
-        const pc = createPeerConnection(response.targetSocketId, stream);
+      socket.emit(
+        "call-user-init",
+        { toUserId: targetUser._id, type },
+        async (response) => {
+          if (!response || !response.targetSocketId) {
+            toast.error("User is offline or unavailable.");
+            terminateCallPipeline();
+            return;
+          }
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+          partnerSocketIdRef.current = response.targetSocketId;
+          const pc = createPeerConnection(response.targetSocketId, stream);
 
-        socket.emit("call-user", {
-          toSocketId: response.targetSocketId,
-          offer,
-          type,
-          callerProfile: authUser,
-        });
-      });
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          socket.emit("call-user", {
+            toSocketId: response.targetSocketId,
+            offer,
+            type,
+            callerProfile: authUser,
+          });
+        },
+      );
     } catch (error) {
       console.error(error);
       terminateCallPipeline();
@@ -127,13 +152,16 @@ export const CallProvider = ({ children }) => {
   };
 
   const acceptIncomingCall = async () => {
-    if (callStateRef.current !== "RINGING" || !peerConnectionRef.current) return;
-    
+    if (callStateRef.current !== "RINGING" || !peerConnectionRef.current)
+      return;
+
     try {
       const stream = await captureLocalMedia(callType);
       setCallState("ON_CALL");
 
-      stream.getTracks().forEach((track) => peerConnectionRef.current.addTrack(track, stream));
+      stream
+        .getTracks()
+        .forEach((track) => peerConnectionRef.current.addTrack(track, stream));
 
       const answer = await peerConnectionRef.current.createAnswer();
       await peerConnectionRef.current.setLocalDescription(answer);
@@ -148,9 +176,28 @@ export const CallProvider = ({ children }) => {
     }
   };
 
-  const dropCall = () => {
+  const dropCall = async () => {
     if (socket && partnerSocketIdRef.current) {
       socket.emit("end-call", { toSocket: partnerSocketIdRef.current });
+
+      // Only log the message if they were actually talking (ON_CALL)
+      if (callState === "ON_CALL" && partnerDetails) {
+        try {
+          // 🌟 FIX: Build a clean FormData object to match your core upload engine
+          const formData = new FormData();
+          formData.append(
+            "text",
+            `${callType === "video" ? "🎥 Video" : "📞 Voice"} call ended`,
+          );
+          formData.append("messageType", "call");
+          formData.append("isGroup", "false");
+
+          // Explicitly target your call partner via custom override params
+          await sendMessage(formData, partnerDetails._id, false);
+        } catch (error) {
+          console.error("Failed to log call message:", error);
+        }
+      }
     }
     terminateCallPipeline();
   };
@@ -175,52 +222,60 @@ export const CallProvider = ({ children }) => {
     }
   };
 
-  
-
   // 🌟 FIX 2 (Cont.): Empty dependencies keep this listener static, solid, and safe from channel dropouts
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("incoming-call", async ({ fromSocket, offer, type, callerProfile }) => {
-      // Use the ref to read realtime state transitions safely
-      if (callStateRef.current !== "IDLE") {
-        return socket.emit("end-call", { toSocket: fromSocket });
-      }
-
-      partnerSocketIdRef.current = fromSocket;
-      setCallState("RINGING");
-      setCallType(type);
-      setPartnerDetails(callerProfile);
-
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      peerConnectionRef.current = pc;
-
-      pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
+    socket.on(
+      "incoming-call",
+      async ({ fromSocket, offer, type, callerProfile }) => {
+        // Use the ref to read realtime state transitions safely
+        if (callStateRef.current !== "IDLE") {
+          return socket.emit("end-call", { toSocket: fromSocket });
         }
-      };
 
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit("ice-candidate", { toSocket: fromSocket, candidate: event.candidate });
-        }
-      };
+        partnerSocketIdRef.current = fromSocket;
+        setCallState("RINGING");
+        setCallType(type);
+        setPartnerDetails(callerProfile);
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    });
+        const pc = new RTCPeerConnection(ICE_SERVERS);
+        peerConnectionRef.current = pc;
+
+        pc.ontrack = (event) => {
+          if (event.streams && event.streams[0]) {
+            setRemoteStream(event.streams[0]);
+          }
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit("ice-candidate", {
+              toSocket: fromSocket,
+              candidate: event.candidate,
+            });
+          }
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      },
+    );
 
     socket.on("call-accepted", async ({ answer }) => {
       if (peerConnectionRef.current) {
         setCallState("ON_CALL");
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        await peerConnectionRef.current.setRemoteDescription(
+          new RTCSessionDescription(answer),
+        );
       }
     });
 
     socket.on("ice-candidate", async ({ candidate }) => {
       try {
         if (peerConnectionRef.current) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+          await peerConnectionRef.current.addIceCandidate(
+            new RTCIceCandidate(candidate),
+          );
         }
       } catch (e) {
         console.error("Error writing incoming ICE candidate pathway:", e);

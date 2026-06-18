@@ -1,12 +1,35 @@
 import React, { useContext } from "react";
 import assets from "../../assets/assets";
-// 🌟 Added Phone and Video from lucide-react
 import { Phone, Video } from "lucide-react";
-// 🌟 Consume Call Context Hook
 import { CallContext } from "../../../context/CallContext";
+import { ChatContext } from "../../../context/ChatContext"; // 🌟 Consuming typing status definitions
 
-const ChatHeader = ({ isGroup, selectedChat, onlineUsers, setShowInfoDrawer, handleCloseChat }) => {
-  const { startCall } = useContext(CallContext); // 🌟 Hook invocation
+const ChatHeader = ({
+  isGroup,
+  selectedChat,
+  onlineUsers,
+  setShowInfoDrawer,
+  handleCloseChat,
+}) => {
+  const { startCall } = useContext(CallContext);
+  const { typingStatus } = useContext(ChatContext); // 🌟 Grab live dictionary values
+
+  // Determine typing presentation metadata logic
+  const activeChatId = selectedChat?._id;
+  const currentTypers = typingStatus[activeChatId];
+
+  let typingText = "";
+  if (isGroup && Array.isArray(currentTypers) && currentTypers.length > 0) {
+    if (currentTypers.length === 1) {
+      typingText = `${currentTypers[0]} is typing...`;
+    } else if (currentTypers.length === 2) {
+      typingText = `${currentTypers[0]} and ${currentTypers[1]} are typing...`;
+    } else {
+      typingText = "Several people are typing...";
+    }
+  } else if (!isGroup && currentTypers) {
+    typingText = "typing...";
+  }
 
   return (
     <div className="flex items-center gap-3 mx-4 border-b border-stone-500 py-2 shrink-0 px-2 rounded-lg transition-colors">
@@ -22,16 +45,29 @@ const ChatHeader = ({ isGroup, selectedChat, onlineUsers, setShowInfoDrawer, han
         />
       )}
 
-      <div className="flex-1 text-lg flex flex-col md:flex-row md:items-center gap-0 md:gap-2 font-medium">
-        <div className="flex items-center gap-2">
+      {/* 🌟 FIXED: Display a responsive subtitle underneath user names when typing matches */}
+      <div className="flex-1 flex flex-col justify-center">
+        <div className="flex items-center gap-2 text-md font-medium leading-tight text-white">
           {isGroup ? selectedChat.name : selectedChat.fullName}
-          {!isGroup && onlineUsers.includes(selectedChat._id) && (
-            <span className="w-2 h-2 rounded-full bg-green-500"></span>
-          )}
+          {!isGroup &&
+            onlineUsers.includes(selectedChat._id) &&
+            !typingText && (
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            )}
         </div>
+        {typingText ? (
+          <span className="text-xs text-emerald-400 font-normal italic animate-pulse tracking-wide mt-0.5">
+            {typingText}
+          </span>
+        ) : (
+          !isGroup && (
+            <span className="text-[11px] text-zinc-400 font-light tracking-wide mt-0.5">
+              {onlineUsers.includes(selectedChat._id) ? "Online" : "Offline"}
+            </span>
+          )
+        )}
       </div>
 
-      {/* 🌟 NEW: WebRTC Media Interaction Controls (Hidden automatically inside Group Chats) */}
       {!isGroup && (
         <div className="flex items-center gap-1 mr-1">
           <button

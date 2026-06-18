@@ -242,10 +242,19 @@ export const handleJoinRequest = async (req, res) => {
     const { groupId, applicantId, action } = req.body;
     const adminId = req.user._id;
 
+    console.log("adminId", adminId);
+    console.log("applicantId", applicantId);
+    console.log("action", action);
+    console.log("groupId", groupId);
+
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ error: "Group not found" });
 
     if (!group.members.includes(adminId)) {
+
+      console.log("Group members", group.members);
+      console.log("Admin ID", adminId);
+
       return res
         .status(400)
         .json({ error: "You are not authorized to perform this action" });
@@ -262,6 +271,9 @@ export const handleJoinRequest = async (req, res) => {
       });
     }
 
+    const username = req.user.fullName;
+    const groupName = group.name;
+
     const userSocketId = userSocketMap[applicantId];
     if (userSocketId) {
       io.to(userSocketId).emit("requestAction", { groupName: group.name, action });
@@ -272,5 +284,6 @@ export const handleJoinRequest = async (req, res) => {
       .json({ success: true, message: `Request ${action}ed successfully` });
   } catch (error) {
     res.status(500).json({ message: error.message });
+    console.error("Error handling join request:", error.message);
   }
 };

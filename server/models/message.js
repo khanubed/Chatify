@@ -60,6 +60,19 @@ const messageSchema = new mongoose.Schema(
       type : mongoose.Schema.Types.ObjectId,
       ref : "User",
       default : null
+    },
+    isCallLog : {
+      type : Boolean,
+      default : false
+    },
+    callDuration : {
+      type : String,
+      default : "00:00"
+    },
+    messageType : {
+      type : String,
+      enum : ["text" , "image" , "audio" , "video" , "call"],
+      default : "text"
     }
   },
   { timestamps: true },
