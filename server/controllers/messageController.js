@@ -1,7 +1,7 @@
 import { Mongoose } from "mongoose";
 import Message from "../models/message.js";
 import cloudinary from "../lib/cloudinary.js";
-import { io, userSocketMap } from "../server.js";
+import { io, userSocketMap } from "../sockets/index.js";
 import User from "../models/user.js";
 import Group from "../models/group.js";
 import { uploadToCloudinary } from "../lib/multer.js";
@@ -21,7 +21,7 @@ export const getUsersForSideBar = async (req, res) => {
       const messages = await Message.find({
         senderId: user._id,
         receiverId: userId,
-        seen: false,
+        seenBy: { $ne: userId },
       });
       if (messages.length > 0) {
         unseenMessages[user._id] = messages.length;
@@ -88,7 +88,7 @@ export const getMessages = async (req, res) => {
 };
 export const sendMessage = async (req, res) => {
   try {
-    
+
     const { text, isGroup, groupId, parent, isForwarded, image, audio, video, messageType } =
       req.body;
     const receiverId = req.params.id;

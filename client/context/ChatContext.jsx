@@ -25,6 +25,54 @@ export const ChatProvider = ({ children }) => {
 
   const { socket, authUser, setAuthUser } = useContext(AuthContext);
 
+  const emitSocketAction = useCallback(
+    (eventName, payload, timeout = 30000) =>
+      new Promise((resolve, reject) => {
+        if (!socket) {
+          reject(new Error("Chat disconnected"));
+          return;
+        }
+
+        socket.timeout(timeout).emit(eventName, payload, (error, response) => {
+          if (error) {
+            reject(new Error("Socket request timed out"));
+            return;
+          }
+
+          if (!response?.success) {
+            reject(new Error(response?.message || "Socket action failed"));
+            return;
+          }
+
+          resolve(response);
+        });
+      }),
+    [socket],
+  );
+
+  const formDataToSocketPayload = async (formData, targetId, isGroupChat) => {
+    const payload = {
+      targetId,
+      isGroup: isGroupChat,
+    };
+
+    for (const [key, value] of formData.entries()) {
+      if (key === "file" && value instanceof Blob) {
+        payload.file = {
+          originalname: value.name || "voice-message.webm",
+          mimetype: value.type,
+          size: value.size,
+          buffer: await value.arrayBuffer(),
+        };
+      } else {
+        payload[key] = value;
+      }
+    }
+
+    if (isGroupChat) payload.groupId = payload.groupId || targetId;
+    return payload;
+  };
+
   const getUsers = async () => {
     try {
       const { data } = await API.get("/messages/users");
@@ -77,9 +125,7 @@ export const ChatProvider = ({ children }) => {
       );
       if (data.success) {
         setMessages(data.messages);
-        if (isGroupChat) {
-          await API.put(`/groups/mark/${targetId}`);
-        }
+        markAsSeen(targetId, isGroupChat);
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to fetch messages");
@@ -100,8 +146,17 @@ export const ChatProvider = ({ children }) => {
 
       if (!targetId) return;
 
-      // Notice we still pass formData directly to your existing endpoint
-      const { data } = await API.post(`/messages/send/${targetId}`, formData);
+      if (!socket) {
+        toast.error("Chat disconnected. Unable to send.");
+        return;
+      }
+
+      const payload = await formDataToSocketPayload(
+        formData,
+        targetId,
+        isGroupChat,
+      );
+      const data = await emitSocketAction("sendMessage", payload, 60000);
 
       if (data.success) {
         // 🌟 2. SMART UX CHECK: Only append to the screen if it's the currently open chat!
@@ -123,44 +178,36 @@ export const ChatProvider = ({ children }) => {
   };
 
   const editMessage = async (messageId, newText) => {
+    if (!socket) return toast.error("Chat disconnected. Unable to edit.");
     try {
-      const res = await API.put(`/messages/edit/${messageId}`, { newText });
-      if (res.data) {
-        setMessages((prev) =>
-          prev.map((msg) => (msg._id === messageId ? res.data : msg)),
-        );
-        socket.emit("messageEdited", res.data);
-      }
+      // Emit directly to the backend socket, skipping HTTP API overhead layers
+      await emitSocketAction("editMessage", { messageId, newText });
     } catch (err) {
-      toast.error("Failed to edit message");
+      console.error("Failed handling execution logic for editing:", err);
+      toast.error(err.message || "Failed to edit message");
     }
   };
 
   const deleteMessage = async (messageId) => {
+    if (!socket) return toast.error("Chat disconnected. Unable to delete.");
     try {
-      const res = await API.delete(`/messages/delete/${messageId}`);
-      if (res.data) {
-        setMessages((prev) =>
-          prev.map((msg) => (msg._id === messageId ? res.data : msg)),
-        );
-        socket.emit("messageDeleted", res.data);
-        toast.success("Message deleted");
-      }
+      // Dispatch soft-delete order sequence down real-time pathways
+      await emitSocketAction("deleteMessage", { messageId });
     } catch (err) {
-      toast.error("Failed to delete message");
+      console.error("Failed handling execution logic for deleting:", err);
+      toast.error(err.message || "Failed to delete message");
     }
   };
 
   const handleMessageReaction = async (messageId, emoji) => {
-    // 1. OPTIMISTIC UPDATE: Update UI instantly for a snappy feel
+    if (!socket) return toast.error("Chat disconnected.");
+
+    // OPTIMISTIC UPDATE: Update UI immediately for real-time responsiveness
     setMessages((prevMessages) =>
       prevMessages.map((msg) => {
         if (msg._id !== messageId) return msg;
 
-        // Ensure reactions array exists
         const reactions = msg.reactions || [];
-
-        // Find if current user already reacted
         const existingIndex = reactions.findIndex(
           (r) =>
             (r.userId?._id || r.userId)?.toString() === authUser._id.toString(),
@@ -170,17 +217,14 @@ export const ChatProvider = ({ children }) => {
 
         if (existingIndex > -1) {
           if (updatedReactions[existingIndex].emoji === emoji) {
-            // Remove reaction if clicked the exact same one again
             updatedReactions.splice(existingIndex, 1);
           } else {
-            // Swap emoji if they chose a different one
             updatedReactions[existingIndex] = {
               ...updatedReactions[existingIndex],
               emoji,
             };
           }
         } else {
-          // Brand new reaction
           updatedReactions.push({ userId: authUser._id, emoji });
         }
 
@@ -189,19 +233,13 @@ export const ChatProvider = ({ children }) => {
     );
 
     try {
-      const response = await API.patch(`/messages/${messageId}/reaction`, {
-        emoji,
-      });
-
-      console.log(response);
-      // 3. SOCKET BROADCAST (Optional): If using socket.io, notify other chat members
-      socket.emit("messageReaction", {
-        messageId,
-        reactions: response.data.reactions,
-      });
+      // Send execution details down websocket line rather than hitting API endpoint path layouts
+      await emitSocketAction("toggleReaction", { messageId, emoji });
     } catch (error) {
-      console.error("Failed to sync reaction to database:", error);
-      // Optional: Revert state or trigger a toast if the database update fails
+      console.error(
+        "Failed syncing reaction parameters down socket structure:",
+        error,
+      );
     }
   };
 
@@ -210,22 +248,15 @@ export const ChatProvider = ({ children }) => {
     async (chatId, isGroupChat = false) => {
       if (!socket || !chatId) return;
       try {
-        await API.post(`/messages/seen/${chatId}`, { isGroup: isGroupChat });
-        socket.emit("messagesSeen", {
+        await emitSocketAction("markMessagesSeen", {
           chatId,
-          user: {
-            _id: authUser._id,
-            fullName: authUser.fullName,
-            profilePic: authUser.profilePic,
-            username: authUser.username,
-          },
           isGroup: isGroupChat,
         });
       } catch (err) {
         console.error("Failed executing visibility sequence:", err);
       }
     },
-    [socket, authUser?._id],
+    [socket, emitSocketAction],
   );
 
   const addGroupMember = async (groupId, userId) => {
@@ -457,7 +488,7 @@ export const ChatProvider = ({ children }) => {
       );
     });
 
-    socket.on("userSeenReceipt", ({ user, chatId }) => {
+    socket.on("userSeenReceipt", ({ user }) => {
       setMessages((prev) =>
         prev.map((msg) => {
           const existingViewerIds =
@@ -487,7 +518,8 @@ export const ChatProvider = ({ children }) => {
     });
 
     socket.on("requestedToJoin", () => {
-      (toast.success("New join request received"), getGroups());
+      toast.success("New join request received");
+      getGroups();
     });
 
     socket.on("reactionUpdated", (updatedMessage) => {
@@ -496,6 +528,10 @@ export const ChatProvider = ({ children }) => {
           msg._id === updatedMessage._id ? updatedMessage : msg,
         ),
       );
+    });
+
+    socket.on("socketActionError", ({ message }) => {
+      if (message) toast.error(message);
     });
 
     socket.on("displayTyping", (data) => {
@@ -560,8 +596,8 @@ export const ChatProvider = ({ children }) => {
       socket.off("userSeenReceipt");
       socket.off("requestAction");
       socket.off("reactionUpdated");
+      socket.off("socketActionError");
       socket.off("displayTyping");
-      socket.off("off", "hideTyping"); // Correct clean up string format
       socket.off("hideTyping");
     };
   }, [socket, authUser?._id, markAsSeen]);

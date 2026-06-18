@@ -92,8 +92,13 @@ export const AuthProvider = ({ children }) => {
   const connectSocket = (userData) => {
     if (!userData || socket?.connected) return;
 
+    const activeToken = localStorage.getItem("token");
+
     const newSocket = io(backendURL, {
       query: { userId: userData._id },
+      auth: {
+        token: activeToken,
+      },
       transports: ["websocket"],
       upgrade: false,
       reconnection: true,

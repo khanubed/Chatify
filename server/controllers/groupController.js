@@ -1,7 +1,7 @@
 import Group from "../models/group.js";
 import User from "../models/user.js";
 import Message from "../models/message.js";
-import { io, userSocketMap } from "../server.js";
+import { io, userSocketMap } from "../sockets/index.js";
 
 export const createGroup = async (req, res) => {
   try {
