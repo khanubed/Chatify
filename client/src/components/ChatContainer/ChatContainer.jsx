@@ -91,7 +91,7 @@ const ChatContainer = () => {
   return (
     <>
       {currentChat ? (
-        <div className="h-full overflow-hidden relative backdrop-blur-lg flex flex-col justify-between text-white w-full flex-1">
+        <div className="h-full max-h-screen overflow-hidden relative backdrop-blur-lg flex flex-col justify-between text-white w-full flex-1">
           <ChatHeader
             isGroup={isGroup}
             selectedChat={currentChat}
