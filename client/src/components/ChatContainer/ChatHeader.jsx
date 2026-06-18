@@ -2,7 +2,7 @@ import React, { useContext } from "react";
 import assets from "../../assets/assets";
 import { Phone, Video } from "lucide-react";
 import { CallContext } from "../../../context/CallContext";
-import { ChatContext } from "../../../context/ChatContext"; // 🌟 Consuming typing status definitions
+import { ChatContext } from "../../../context/ChatContext";
 
 const ChatHeader = ({
   isGroup,
@@ -12,9 +12,8 @@ const ChatHeader = ({
   handleCloseChat,
 }) => {
   const { startCall } = useContext(CallContext);
-  const { typingStatus } = useContext(ChatContext); // 🌟 Grab live dictionary values
+  const { typingStatus } = useContext(ChatContext);
 
-  // Determine typing presentation metadata logic
   const activeChatId = selectedChat?._id;
   const currentTypers = typingStatus[activeChatId];
 
@@ -45,7 +44,6 @@ const ChatHeader = ({
         />
       )}
 
-      {/* 🌟 FIXED: Display a responsive subtitle underneath user names when typing matches */}
       <div className="flex-1 flex flex-col justify-center">
         <div className="flex items-center gap-2 text-md font-medium leading-tight text-white">
           {isGroup ? selectedChat.name : selectedChat.fullName}
@@ -68,24 +66,23 @@ const ChatHeader = ({
         )}
       </div>
 
-      {!isGroup && (
-        <div className="flex items-center gap-1 mr-1">
-          <button
-            onClick={() => startCall(selectedChat, "voice")}
-            className="text-gray-400 hover:text-green-400 p-2 rounded-full hover:bg-white/5 active:scale-95 transition-all"
-            title="Start voice call"
-          >
-            <Phone size={18} />
-          </button>
-          <button
-            onClick={() => startCall(selectedChat, "video")}
-            className="text-gray-400 hover:text-blue-400 p-2 rounded-full hover:bg-white/5 active:scale-95 transition-all"
-            title="Start video call"
-          >
-            <Video size={18} />
-          </button>
-        </div>
-      )}
+      {/* 🌟 Modified: Action Buttons are now visible for both Private AND Group Chats */}
+      <div className="flex items-center gap-1 mr-1">
+        <button
+          onClick={() => startCall(selectedChat, "voice", isGroup)}
+          className="text-gray-400 hover:text-green-400 p-2 rounded-full hover:bg-white/5 active:scale-95 transition-all"
+          title={isGroup ? "Start group voice call" : "Start voice call"}
+        >
+          <Phone size={18} />
+        </button>
+        <button
+          onClick={() => startCall(selectedChat, "video", isGroup)}
+          className="text-gray-400 hover:text-blue-400 p-2 rounded-full hover:bg-white/5 active:scale-95 transition-all"
+          title={isGroup ? "Start group video call" : "Start video call"}
+        >
+          <Video size={18} />
+        </button>
+      </div>
 
       <button
         onClick={() => setShowInfoDrawer(true)}

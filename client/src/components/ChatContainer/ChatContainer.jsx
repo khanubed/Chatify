@@ -148,7 +148,7 @@ const ChatContainer = () => {
         seenModalList={seenModalList}
         setSeenModalList={setSeenModalList}
       />
-      <CallInterface />
+      {/* <CallInterface /> */}
     </>
   );
 };

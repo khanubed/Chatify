@@ -3,6 +3,7 @@ import Sidebar from "../components/Sidebar";
 import ChatContainer from "../components/ChatContainer/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
 import { ChatContext } from "../../context/ChatContext";
+import CallInterface from "../components/ChatContainer/CallInterface";
 
 const HomePage = () => {
   const { selectedUser, selectedGroup } = useContext(ChatContext);
@@ -30,6 +31,7 @@ const HomePage = () => {
         </div>
 
         <RightSidebar />
+        <CallInterface />
       </div>
     </div>
   );

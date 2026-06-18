@@ -339,18 +339,33 @@ export const ChatProvider = ({ children }) => {
       return false;
     }
   };
+  // ... keep your imports and state hooks exactly as they are
 
-  const sendTypingStatus = (isTyping) => {
+  // 🌟 UPDATED: Accepts explicit payload overrides to prevent room-switching race conditions
+  const sendTypingStatus = (
+    isTyping,
+    forcedChatId = null,
+    forcedIsGroup = null,
+  ) => {
     if (!socket) return;
-    if (selectedGroup) {
+
+    // Use explicit overrides if passed from the cleanup hook, otherwise fallback to standard state
+    const resolveIsGroup =
+      forcedIsGroup !== null ? forcedIsGroup : !!selectedGroup;
+    const targetChatId =
+      forcedChatId || (resolveIsGroup ? selectedGroup?._id : selectedUser?._id);
+
+    if (!targetChatId) return;
+
+    if (resolveIsGroup) {
       socket.emit(isTyping ? "typing" : "stop-typing", {
-        groupId: selectedGroup._id,
+        groupId: targetChatId,
         isGroup: true,
         senderName: authUser?.fullName || authUser?.name || "Someone",
       });
-    } else if (selectedUser) {
+    } else {
       socket.emit(isTyping ? "typing" : "stop-typing", {
-        receiverId: selectedUser._id,
+        receiverId: targetChatId,
         isGroup: false,
       });
     }
@@ -383,7 +398,6 @@ export const ChatProvider = ({ children }) => {
       const senderUserIdString = rawSenderId?.toString();
       const authUserIdString = authUser?._id?.toString();
 
-      // 1. GROUP CHAT HANDLING
       if (newMessage.groupId) {
         console.log("new message emitted");
         setSelectedGroup((currentGroup) => {
@@ -394,15 +408,13 @@ export const ChatProvider = ({ children }) => {
             if (senderUserIdString === authUserIdString) return currentGroup;
 
             setMessages((prevMessages) => [...prevMessages, newMessage]);
-            markAsSeen(incomingTargetId, true); // Sync group seen live
+            markAsSeen(incomingTargetId, true);
           } else {
-            // 🌟 NOT FROM SELECTED GROUP: Increment count and trigger notification
             setUnseenGroups((prevUnseenGroups) => ({
               ...prevUnseenGroups,
               [incomingTargetId]: (prevUnseenGroups[incomingTargetId] || 0) + 1,
             }));
 
-            // Only notify if the background group message wasn't sent by the authUser themselves
             if (senderUserIdString !== authUserIdString) {
               triggerNotification(newMessage, true);
             }
@@ -412,7 +424,6 @@ export const ChatProvider = ({ children }) => {
         return;
       }
 
-      // 2. PRIVATE CHAT HANDLING
       if (senderUserIdString === authUserIdString) return;
 
       setSelectedUser((currentUser) => {
@@ -420,9 +431,8 @@ export const ChatProvider = ({ children }) => {
 
         if (currentUser && senderUserIdString === activeUserId) {
           setMessages((prevMessages) => [...prevMessages, newMessage]);
-          markAsSeen(senderUserIdString, false); // Sync private seen live
+          markAsSeen(senderUserIdString, false);
         } else {
-          // 🌟 NOT FROM SELECTED USER: Increment count and trigger notification
           setUnseenMessages((prevUnseenMessages) => ({
             ...prevUnseenMessages,
             [senderUserIdString]:
@@ -450,7 +460,6 @@ export const ChatProvider = ({ children }) => {
     socket.on("userSeenReceipt", ({ user, chatId }) => {
       setMessages((prev) =>
         prev.map((msg) => {
-          // Safely extract IDs to check for duplicates
           const existingViewerIds =
             msg.seenBy?.map((v) => (v._id || v)?.toString()) || [];
           const newViewerId = (user._id || user)?.toString();
@@ -458,7 +467,6 @@ export const ChatProvider = ({ children }) => {
           if (!existingViewerIds.includes(newViewerId)) {
             return {
               ...msg,
-              // 🌟 Push the complete user object into the state array
               seenBy: [...(msg.seenBy || []), user],
             };
           }
@@ -490,33 +498,61 @@ export const ChatProvider = ({ children }) => {
       );
     });
 
-    socket.on("displayTyping", ({ senderId, groupId, isGroup, senderName }) => {
-    const chatId = isGroup ? groupId : senderId;
-    setTypingStatus((prev) => ({
-      ...prev,
-      [chatId]: isGroup
-        ? [...(prev[chatId] || []).filter((name) => name !== senderName), senderName]
-        : true,
-    }));
-  });
+    socket.on("displayTyping", (data) => {
+      console.log("Raw displayTyping payload from backend:", data);
 
-  socket.on("hideTyping", ({ senderId, groupId, isGroup, senderName }) => {
-    const chatId = isGroup ? groupId : senderId;
-    setTypingStatus((prev) => {
-      if (isGroup) {
-        const activeGroupTypers = prev[chatId] || [];
-        return {
-          ...prev,
-          [chatId]: activeGroupTypers.filter((name) => name !== senderName),
-        };
-      } else {
-        const updatedStatus = { ...prev };
-        delete updatedStatus[chatId];
-        return updatedStatus;
+      // Fallback map matching what your backend is ACTUALLY emitting
+      const isGroup = data.isGroup ?? false;
+      const groupId = data.groupId || undefined;
+      const senderId =
+        data.senderId || data.senderIdString || data.userId || data.from;
+      const senderName = data.senderName || "Someone";
+
+      const chatId = isGroup ? groupId : senderId;
+
+      if (!chatId) {
+        console.error("Could not resolve a valid chatId from payload:", data);
+        return;
       }
-    });
-  });
 
+      setTypingStatus((prev) => ({
+        ...prev,
+        [chatId]: isGroup
+          ? [
+              ...(prev[chatId] || []).filter((name) => name !== senderName),
+              senderName,
+            ]
+          : true,
+      }));
+    });
+
+    socket.on("hideTyping", (data) => {
+      console.log("Raw hideTyping payload from backend:", data);
+
+      const isGroup = data.isGroup ?? false;
+      const groupId = data.groupId || undefined;
+      const senderId =
+        data.senderId || data.senderIdString || data.userId || data.from;
+      const senderName = data.senderName || "Someone";
+
+      const chatId = isGroup ? groupId : senderId;
+
+      if (!chatId) return;
+
+      setTypingStatus((prev) => {
+        if (isGroup) {
+          const activeGroupTypers = prev[chatId] || [];
+          return {
+            ...prev,
+            [chatId]: activeGroupTypers.filter((name) => name !== senderName),
+          };
+        } else {
+          const updatedStatus = { ...prev };
+          delete updatedStatus[chatId];
+          return updatedStatus;
+        }
+      });
+    });
     return () => {
       socket.off("newMessage", handleNewMessage);
       socket.off("messageUpdated");
@@ -525,6 +561,7 @@ export const ChatProvider = ({ children }) => {
       socket.off("requestAction");
       socket.off("reactionUpdated");
       socket.off("displayTyping");
+      socket.off("off", "hideTyping"); // Correct clean up string format
       socket.off("hideTyping");
     };
   }, [socket, authUser?._id, markAsSeen]);
@@ -547,7 +584,6 @@ export const ChatProvider = ({ children }) => {
         setUnseenMessages,
         unseenGroups,
         setUnseenGroups,
-        sendMessage,
         showInfoDrawer,
         setShowInfoDrawer,
         addGroupMember,
@@ -565,7 +601,8 @@ export const ChatProvider = ({ children }) => {
         forwardMessage,
         sendMessage,
         typingStatus,
-        setTypingStatus
+        setTypingStatus,
+        sendTypingStatus, // 🌟 FIXED: Added sendTypingStatus method to your provider value map!
       }}
     >
       {children}
