@@ -83,6 +83,11 @@ export const AuthProvider = ({ children }) => {
       },
       transports: ["websocket"], // 👈 CRITICAL: Disables polling, connects directly via WS
       upgrade: false,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 5000,
+      reconnectionDelayMax: 10000,
+      timeout: 15000,
     });
     newSocket.connect();
     setSocket(newSocket);
