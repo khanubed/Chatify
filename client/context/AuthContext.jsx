@@ -81,6 +81,8 @@ export const AuthProvider = ({ children }) => {
       query: {
         userId: userData._id,
       },
+      transports: ["websocket"], // 👈 CRITICAL: Disables polling, connects directly via WS
+      upgrade: false,
     });
     newSocket.connect();
     setSocket(newSocket);
