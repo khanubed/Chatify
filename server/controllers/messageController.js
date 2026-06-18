@@ -88,7 +88,7 @@ export const getMessages = async (req, res) => {
 };
 export const sendMessage = async (req, res) => {
   try {
-    // 🌟 FIX: Added messageType to the destructured body parameters
+    
     const { text, isGroup, groupId, parent, isForwarded, image, audio, video, messageType } =
       req.body;
     const receiverId = req.params.id;
