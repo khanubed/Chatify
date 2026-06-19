@@ -1,9 +1,9 @@
 import React, { useContext } from "react";
-import Sidebar from "../components/Sidebar";
-import ChatContainer from "../components/ChatContainer/ChatContainer";
-import RightSidebar from "../components/RightSidebar";
-import { ChatContext } from "../../context/ChatContext";
-import CallInterface from "../components/ChatContainer/CallInterface";
+import Sidebar from "../sections/Sidebar";
+import ChatContainer from "../sections/ChatContainer/ChatContainer";
+import RightSidebar from "../sections/RightSidebar";
+import { ChatContext } from "../context/ChatContext";
+import CallInterface from "../sections/CallInterface";
 
 const HomePage = () => {
   const { selectedUser, selectedGroup } = useContext(ChatContext);

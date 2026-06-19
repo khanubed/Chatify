@@ -1,15 +1,15 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import assets from "../../assets/assets";
-import { AuthContext } from "../../../context/AuthContext";
-import { ChatContext } from "../../../context/ChatContext";
+import { AuthContext } from "../../context/AuthContext";
+import { ChatContext } from "../../context/ChatContext";
 
 // Sub-components
-import ChatHeader from "./ChatHeader";
-import MessageBubble from "./MessageBubble";
-import ChatInput from "./ChatInput";
-import ZoomedImageModal from "./ZoomedImageModal";
-import SeenModal from "./SeenModal";
-import CallInterface from "./CallInterface";
+import ChatHeader from "./components/ChatHeader";
+import MessageBubble from "./components/MessageBubble";
+import ChatInput from "./components/ChatInput";
+import ZoomedImageModal from "./components/ZoomedImageModal";
+import SeenModal from "./components/SeenModal";
+import CallInterface from "../CallInterface";
 
 const ChatContainer = () => {
   const { authUser, onlineUsers, socket } = useContext(AuthContext);

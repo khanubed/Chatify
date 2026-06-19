@@ -1,7 +1,7 @@
 import React, { useContext, useState, useEffect } from "react";
 import assets from "../assets/assets";
-import { ChatContext } from "../../context/ChatContext";
-import { AuthContext } from "../../context/AuthContext";
+import { ChatContext } from "../context/ChatContext";
+import { AuthContext } from "../context/AuthContext";
 import Swal from "sweetalert2"; // 🌟 Imported SweetAlert2 for modern custom modal confirmations
 import {
   X,
@@ -301,7 +301,8 @@ const RightSidebar = () => {
           />
 
           {/* Slide Up Panel Frame */}
-          <div className="fixed bottom-0 left-0 right-0 max-h-[85vh] h-auto bg-[#182031] text-white rounded-t-2xl z-50 px-5 pt-2 pb-6 border-t border-gray-800 flex flex-col justify-start">
+          {/* 🌟 CHANGED: Set a fixed height matching max-h to create a solid viewport ceiling */}
+          <div className="fixed bottom-0 left-0 right-0 h-[85vh] max-h-[85vh] bg-[#182031] text-white rounded-t-2xl z-50 px-5 pt-2 pb-6 border-t border-gray-800 flex flex-col">
             {/* Swipe handle decoration / action bar block */}
             <div className="flex flex-col items-center py-2 shrink-0">
               <div
@@ -323,7 +324,8 @@ const RightSidebar = () => {
             </div>
 
             {/* Core Content Box */}
-            <div className="flex-1 min-h-0 overflow-hidden mt-2">
+            {/* 🌟 CHANGED: Swapped overflow-hidden to overflow-y-auto so layout overflow drops smoothly into your scrollbar wrapper */}
+            <div className="flex-1 min-h-0 overflow-y-auto mt-2 custom-scrollbar">
               <SidebarInnerUI />
             </div>
           </div>
@@ -332,7 +334,7 @@ const RightSidebar = () => {
 
       {/* 🖥️ STANDARD DESKTOP VIEW: FIXED COLUMN SEGMENT */}
       <div className="hidden xl:flex flex-col justify-between h-full w-[300px] min-w-[300px] max-w-[300px] bg-[#8196b2]/5 text-white border-l border-gray-800 p-5 shrink-0 overflow-hidden">
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 flex flex-col">
           <AdminNotificationPanel />
           <SidebarInnerUI />
         </div>

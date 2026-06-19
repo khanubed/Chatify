@@ -2,7 +2,7 @@ import React, { useState, useRef, useContext, useEffect } from "react";
 import { CornerUpLeft, X, Mic, Send, Play } from "lucide-react";
 import { ChatContext } from "../../../context/ChatContext";
 import toast from "react-hot-toast";
-import assets from "../../assets/assets";
+import assets from "../../../assets/assets";
 
 const ChatInput = () => {
   const {

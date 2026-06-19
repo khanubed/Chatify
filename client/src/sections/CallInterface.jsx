@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { CallContext } from "../../../context/CallContext";
+import { CallContext } from "../context/CallContext";
 import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from "lucide-react";
-import assets from "../../assets/assets";
+import assets from "../assets/assets";
 
 const CallInterface = () => {
   const {

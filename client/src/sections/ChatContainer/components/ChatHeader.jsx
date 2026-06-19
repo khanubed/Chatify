@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import assets from "../../assets/assets";
+import assets from "../../../assets/assets";
 import { Phone, Video } from "lucide-react";
 import { CallContext } from "../../../context/CallContext";
 import { ChatContext } from "../../../context/ChatContext";

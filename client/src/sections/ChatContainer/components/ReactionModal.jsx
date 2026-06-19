@@ -1,6 +1,6 @@
 import React from "react";
 import { X } from "lucide-react";
-import assets from "../../assets/assets";
+import assets from "../../../assets/assets";
 
 const ReactionModal = ({ msg, onClose, members }) => {
   console.log("msg", msg);

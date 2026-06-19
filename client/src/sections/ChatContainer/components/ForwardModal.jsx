@@ -1,7 +1,7 @@
 import React, { useState, useContext } from "react";
 import { X, Search, Send } from "lucide-react";
 import { ChatContext } from "../../../context/ChatContext";
-import assets from "../../assets/assets";
+import assets from "../../../assets/assets";
 
 const ForwardModal = ({ msg, onClose, authUser }) => {
   const { users, groups, forwardMessage } = useContext(ChatContext);
@@ -13,7 +13,13 @@ const ForwardModal = ({ msg, onClose, authUser }) => {
     ...groups.map((g) => ({ ...g, isGroup: true, id: g._id, title: g.name })),
     ...users
       .filter((u) => u._id !== authUser._id)
-      .map((u) => ({ ...u, isGroup: false, id: u._id, title: u.fullName, profilePic: u.profilePic})),
+      .map((u) => ({
+        ...u,
+        isGroup: false,
+        id: u._id,
+        title: u.fullName,
+        profilePic: u.profilePic,
+      })),
   ].filter((item) => item.title.toLowerCase().includes(search.toLowerCase()));
 
   const handleForwardClick = async (targetId, isGroup) => {
@@ -71,11 +77,7 @@ const ForwardModal = ({ msg, onClose, authUser }) => {
               >
                 <div className="flex items-center gap-3">
                   <img
-                    src={
-                      chat.profilePic ||
-                      chat.avatar ||
-                      assets.avatar_icon
-                    }
+                    src={chat.profilePic || chat.avatar || assets.avatar_icon}
                     alt=""
                     className="w-9 h-9 rounded-full object-cover border border-white/5"
                   />

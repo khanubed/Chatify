@@ -2,6 +2,8 @@ import Message from "../models/message.js";
 import User from "../models/user.js";
 import Group from "../models/group.js";
 import { uploadToCloudinary } from "../lib/multer.js";
+import { extractCloudinaryPublicId } from "../lib/util.js";
+import { v2 as cloudinary } from "cloudinary";  
 
 export default (io, socket, userSocketMap) => {
   // Guard check helper to ensure user is authenticated over socket connection
@@ -19,7 +21,12 @@ export default (io, socket, userSocketMap) => {
 
   // Helper utility to safely route events to both direct message participants or group rooms
   // excludeSocketId: optionally skip emitting to this socket (e.g. sender who already got the ack)
-  const broadcastToConversation = (message, eventName, payload, excludeSocketId = null) => {
+  const broadcastToConversation = (
+    message,
+    eventName,
+    payload,
+    excludeSocketId = null,
+  ) => {
     if (message.groupId) {
       // Broadcast to the whole group room, optionally excluding a socket
       if (excludeSocketId) {
@@ -77,7 +84,11 @@ export default (io, socket, userSocketMap) => {
     try {
       const senderId = getAuthenticatedUserId();
       if (!senderId) {
-        return emitActionError(callback, "Socket connection is not authenticated", 401);
+        return emitActionError(
+          callback,
+          "Socket connection is not authenticated",
+          401,
+        );
       }
 
       const {
@@ -85,10 +96,9 @@ export default (io, socket, userSocketMap) => {
         targetId,
         groupId,
         parent,
-        image,
-        audio,
-        video,
-        file,
+        image, // 🌟 Now comes in directly as strings containing URLs
+        audio, // 🌟
+        video, // 🌟
         messageType,
       } = payload;
 
@@ -106,10 +116,14 @@ export default (io, socket, userSocketMap) => {
         if (!group) return emitActionError(callback, "Group not found", 404);
 
         const isMember = group.members.some(
-          (memberId) => memberId.toString() === senderId,
+          (mId) => mId.toString() === senderId,
         );
         if (!isMember) {
-          return emitActionError(callback, "You are not a member of this group", 403);
+          return emitActionError(
+            callback,
+            "You are not a member of this group",
+            403,
+          );
         }
       } else {
         const [receiver, sender] = await Promise.all([
@@ -121,67 +135,36 @@ export default (io, socket, userSocketMap) => {
           return emitActionError(callback, "User profile not found", 404);
         }
 
-        const isSenderBlocked = receiver.blockedUsers?.some(
-          (id) => id && id.toString() === senderId,
-        );
-        if (isSenderBlocked) {
+        if (
+          receiver.blockedUsers?.some((id) => id && id.toString() === senderId)
+        ) {
           return emitActionError(
             callback,
             "Message not sent. You have been blocked by this user.",
           );
         }
 
-        const hasBlockedReceiver = sender.blockedUsers?.some(
-          (id) => id && id.toString() === receiverId.toString(),
-        );
-        if (hasBlockedReceiver) {
+        if (
+          sender.blockedUsers?.some(
+            (id) => id && id.toString() === receiverId.toString(),
+          )
+        ) {
           return emitActionError(
             callback,
-            "Message not sent. You must unblock this user to send a message.",
+            "Message not sent. You must unblock this user.",
           );
         }
       }
 
-      let imageURL = image || null;
-      let audioURL = audio || null;
-      let videoURL = video || null;
-
-      const fileBuffer = buildFileBuffer(file);
-      const mimeType = file?.mimetype || file?.type || "";
-
-      if (fileBuffer && mimeType) {
-        const uploadResult = await uploadToCloudinary(fileBuffer, mimeType);
-        const secureUrl = uploadResult.secure_url;
-
-        if (mimeType.startsWith("image/")) {
-          imageURL = secureUrl;
-          audioURL = null;
-          videoURL = null;
-        } else if (mimeType.startsWith("audio/")) {
-          audioURL = secureUrl;
-          imageURL = null;
-          videoURL = null;
-        } else if (mimeType.startsWith("video/")) {
-          videoURL = secureUrl;
-          imageURL = null;
-          audioURL = null;
-        }
-      }
-
-      // Auto-detect messageType from uploaded file MIME type
-      let resolvedMessageType = messageType || "text";
-      if (fileBuffer && mimeType) {
-        if (mimeType.startsWith("image/")) resolvedMessageType = "image";
-        else if (mimeType.startsWith("audio/")) resolvedMessageType = "audio";
-        else if (mimeType.startsWith("video/")) resolvedMessageType = "video";
-      }
+      // 🌟 Clean validation structure: All binary upload engines are gone.
+      const resolvedMessageType = messageType || "text";
 
       let newMessage = await Message.create({
         senderId,
         text: text || "",
-        image: imageURL,
-        audio: audioURL,
-        video: videoURL,
+        image: image || null,
+        audio: audio || null,
+        video: video || null,
         receiverId,
         groupId: isGroup ? resolvedGroupId : null,
         parent: parent && parent !== "null" ? parent : null,
@@ -192,7 +175,6 @@ export default (io, socket, userSocketMap) => {
 
       newMessage = await hydrateMessage(newMessage._id);
 
-      // Exclude sender socket — sender already gets the message via sendAck callback
       broadcastToConversation(newMessage, "newMessage", newMessage, socket.id);
       sendAck(callback, { success: true, newMessage });
     } catch (error) {
@@ -249,7 +231,12 @@ export default (io, socket, userSocketMap) => {
         return emitActionError(callback, "Unauthorized action", 403);
       }
 
-      // Scrub the visual fields
+      // 🌟 OPTIMIZATION STEP 1: Capture the target file links before nullifying them
+      const mediaUrls = [message.image, message.audio, message.video].filter(
+        Boolean,
+      );
+
+      // Scrub the database records instantly
       message.isDeleted = true;
       message.text = "This message was deleted";
       message.image = null;
@@ -257,12 +244,51 @@ export default (io, socket, userSocketMap) => {
       message.video = null;
       await message.save();
 
-      // Broadcast structural updates out to client listener trees
+      // 🌟 OPTIMIZATION STEP 2: Respond to client interfaces instantly (Zero UI blockage)
       broadcastToConversation(message, "messageRemoved", message);
       sendAck(callback, { success: true, message });
+
+      // 🌟 OPTIMIZATION STEP 3: Fire-and-Forget Cloudinary background cleanup execution engine
+      if (mediaUrls.length > 0) {
+        // Intentionally run without wrapping in 'await' so it detaches from the main thread execution line
+        Promise.all(
+          mediaUrls.map(async (url) => {
+            const assetDetails = extractCloudinaryPublicId(url);
+            if (!assetDetails) return;
+
+            try {
+              const result = await cloudinary.uploader.destroy(
+                assetDetails.publicId,
+                {
+                  resource_type: assetDetails.resourceType,
+                  invalidate: true, // Force-evicts CDN cache nodes immediately
+                },
+              );
+              console.log(
+                `Cloudinary garbage collector scrub complete for asset: ${assetDetails.publicId}`,
+                result,
+              );
+            } catch (cloudinaryErr) {
+              console.error(
+                `Background cloud erasure routine stalled for asset URL (${url}):`,
+                cloudinaryErr,
+              );
+            }
+          }),
+        ).catch((err) =>
+          console.error(
+            "Unhandled promise collection crash inside asset purger:",
+            err,
+          ),
+        );
+      }
     } catch (error) {
       console.error("Socket Error in deleteMessage handling layer:", error);
-      emitActionError(callback, error.message || "Failed to delete message", 500);
+      emitActionError(
+        callback,
+        error.message || "Failed to delete message",
+        500,
+      );
     }
   });
 
@@ -309,7 +335,11 @@ export default (io, socket, userSocketMap) => {
       sendAck(callback, { success: true, message: populatedMessage });
     } catch (error) {
       console.error("Socket Error in toggleReaction handling layer:", error);
-      emitActionError(callback, error.message || "Failed to update reaction", 500);
+      emitActionError(
+        callback,
+        error.message || "Failed to update reaction",
+        500,
+      );
     }
   });
 
@@ -361,7 +391,11 @@ export default (io, socket, userSocketMap) => {
       sendAck(callback, { success: true });
     } catch (error) {
       console.error("Socket Error in markMessagesSeen handling layer:", error);
-      emitActionError(callback, error.message || "Failed to mark messages seen", 500);
+      emitActionError(
+        callback,
+        error.message || "Failed to mark messages seen",
+        500,
+      );
     }
   });
 };

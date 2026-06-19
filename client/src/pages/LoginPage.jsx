@@ -1,6 +1,6 @@
 import React, { useContext, useState } from "react";
 import assets from "../assets/assets";
-import { AuthContext } from "../../context/AuthContext";
+import { AuthContext } from "../context/AuthContext";
 import toast from "react-hot-toast"; // Recommended over 'alert' for standard feedback
 
 const LoginPage = () => {

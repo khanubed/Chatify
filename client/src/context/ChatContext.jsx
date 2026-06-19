@@ -7,7 +7,7 @@ import {
 } from "react";
 import { AuthContext } from "./AuthContext";
 import toast from "react-hot-toast";
-import API from "../src/api/axios"; // Consistent configured instance
+import API from "../api/axios"; // Consistent configured instance
 
 export const ChatContext = createContext();
 
@@ -132,12 +132,11 @@ export const ChatProvider = ({ children }) => {
     }
   };
   const sendMessage = async (
-    formData,
+    formData, // Expecting standard FormData instance passed down out of ChatInput
     customTargetId = null,
     customIsGroup = null,
   ) => {
     try {
-      // 🌟 1. Dynamically choose between the active chat or a forward target
       const isGroupChat =
         customIsGroup !== null ? customIsGroup : !!selectedGroup;
       const targetId =
@@ -145,23 +144,55 @@ export const ChatProvider = ({ children }) => {
         (isGroupChat ? selectedGroup?._id : selectedUser?._id);
 
       if (!targetId) return;
+      if (!socket) return toast.error("Chat disconnected. Unable to send.");
 
-      if (!socket) {
-        toast.error("Chat disconnected. Unable to send.");
-        return;
+      // 🌟 1. Check if an media file exists inside the payload
+      const fileAsset = formData.get("file");
+      let uploadedMediaUrl = null;
+      let autoDetectedType = null;
+
+      if (fileAsset) {
+        const uploadFormData = new FormData();
+        uploadFormData.append("file", fileAsset);
+
+        // Hit standard optimized express router middleware endpoint
+        const { data: uploadData } = await API.post(
+          "/messages/upload-asset",
+          uploadFormData,
+          { headers: { "Content-Type": "multipart/form-data" } },
+        );
+
+        uploadedMediaUrl = uploadData.secure_url;
+
+        if (uploadData.mimetype.startsWith("image/"))
+          autoDetectedType = "image";
+        else if (uploadData.mimetype.startsWith("audio/"))
+          autoDetectedType = "audio";
+        else if (uploadData.mimetype.startsWith("video/"))
+          autoDetectedType = "video";
       }
 
-      const payload = await formDataToSocketPayload(
-        formData,
-        targetId,
-        isGroupChat,
-      );
-      const data = await emitSocketAction("sendMessage", payload, 60000);
+      // 🌟 2. Construct clean JSON data context payload parameters
+      const socketPayload = {
+        text: formData.get("text") || "",
+        targetId: targetId,
+        groupId: isGroupChat ? targetId : null,
+        isGroup: isGroupChat,
+        parent: formData.get("parent"),
+        isForwarded: formData.get("isForwarded") || false,
+        messageType: autoDetectedType || formData.get("messageType") || "text",
+
+        // Inject standard CDN links derived out of our step-1 API handler
+        image: autoDetectedType === "image" ? uploadedMediaUrl : null,
+        audio: autoDetectedType === "audio" ? uploadedMediaUrl : null,
+        video: autoDetectedType === "video" ? uploadedMediaUrl : null,
+      };
+
+      // 🌟 3. Emit pure flat JSON down through your socket lifecycle hook
+      const data = await emitSocketAction("sendMessage", socketPayload, 15000); // 15s timeout is plenty for JSON
 
       if (data.success) {
-        // 🌟 2. SMART UX CHECK: Only append to the screen if it's the currently open chat!
         const currentActiveId = selectedGroup?._id || selectedUser?._id;
-
         if (targetId === currentActiveId) {
           setMessages((prevMessages) => [...prevMessages, data.newMessage]);
         } else {
@@ -171,6 +202,7 @@ export const ChatProvider = ({ children }) => {
         toast.error(data.message || "Failed to send message");
       }
     } catch (error) {
+      console.error(error);
       toast.error(
         error.response?.data?.message || "Failed to dispatch message",
       );
@@ -370,7 +402,6 @@ export const ChatProvider = ({ children }) => {
       return false;
     }
   };
-  // ... keep your imports and state hooks exactly as they are
 
   // 🌟 UPDATED: Accepts explicit payload overrides to prevent room-switching race conditions
   const sendTypingStatus = (
@@ -638,7 +669,7 @@ export const ChatProvider = ({ children }) => {
         sendMessage,
         typingStatus,
         setTypingStatus,
-        sendTypingStatus, // 🌟 FIXED: Added sendTypingStatus method to your provider value map!
+        sendTypingStatus,
       }}
     >
       {children}

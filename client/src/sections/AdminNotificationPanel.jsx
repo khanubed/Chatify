@@ -1,6 +1,6 @@
-import React, { useContext } from 'react';
-import { ChatContext } from '../../context/ChatContext';
-import { AuthContext } from '../../context/AuthContext';
+import React, { useContext } from "react";
+import { ChatContext } from "../context/ChatContext";
+import { AuthContext } from "../context/AuthContext";
 
 const AdminNotificationPanel = () => {
   const { groups = [], handleAdminAction } = useContext(ChatContext);
@@ -8,7 +8,9 @@ const AdminNotificationPanel = () => {
 
   // Filter groups created by the current user that have active join requests
   const adminGroupsWithRequests = groups.filter(
-    (group) => group.createdBy?.toString() === authUser._id?.toString() && group.requests?.length > 0
+    (group) =>
+      group.createdBy?.toString() === authUser._id?.toString() &&
+      group.requests?.length > 0,
   );
 
   if (adminGroupsWithRequests.length === 0) return null;
@@ -21,27 +23,39 @@ const AdminNotificationPanel = () => {
       <div className="flex flex-col gap-3 max-h-48 overflow-y-auto custom-scrollbar">
         {adminGroupsWithRequests.map((group) =>
           group.requests.map((applicant) => (
-            <div key={`${group._id}-${applicant._id}`} className="flex items-center justify-between text-xs bg-[#2d323d]/40 p-2.5 rounded-lg border border-gray-700">
+            <div
+              key={`${group._id}-${applicant._id}`}
+              className="flex items-center justify-between text-xs bg-[#2d323d]/40 p-2.5 rounded-lg border border-gray-700"
+            >
               <div className="flex flex-col gap-0.5">
-                <span className="font-medium text-white">{applicant.fullName}</span>
-                <span className="text-[11px] text-gray-400">Wants to join <strong className="text-gray-300">{group.name}</strong></span>
+                <span className="font-medium text-white">
+                  {applicant.fullName}
+                </span>
+                <span className="text-[11px] text-gray-400">
+                  Wants to join{" "}
+                  <strong className="text-gray-300">{group.name}</strong>
+                </span>
               </div>
               <div className="flex gap-1.5">
-                <button 
-                  onClick={() => handleAdminAction(group._id, applicant._id, 'reject')}
+                <button
+                  onClick={() =>
+                    handleAdminAction(group._id, applicant._id, "reject")
+                  }
                   className="px-2.5 py-1 rounded bg-gray-600 hover:bg-gray-500 transition-colors"
                 >
                   Decline
                 </button>
-                <button 
-                  onClick={() => handleAdminAction(group._id, applicant._id, 'accept')}
+                <button
+                  onClick={() =>
+                    handleAdminAction(group._id, applicant._id, "accept")
+                  }
                   className="px-2.5 py-1 rounded bg-blue-500 hover:bg-blue-600 transition-colors text-white font-medium"
                 >
                   Accept
                 </button>
               </div>
             </div>
-          ))
+          )),
         )}
       </div>
     </div>
