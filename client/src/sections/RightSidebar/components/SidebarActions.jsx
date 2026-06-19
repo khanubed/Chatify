@@ -9,7 +9,7 @@ const SidebarActions = () => {
   const { authUser } = useContext(AuthContext);
 
   const isUserBlocked = selectedUser
-    ? authUser?.blockedUsers?.some((id) => id?.toString() === selectedUser._id?.toString())
+    ? selectedUser.blockStatus === 'blockedByMe'
     : false;
 
   const handleLeaveGroupConfirm = () => {
