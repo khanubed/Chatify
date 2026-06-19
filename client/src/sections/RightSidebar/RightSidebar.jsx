@@ -2,10 +2,10 @@ import React, { useContext, useEffect } from "react";
 import { ChatContext } from "../../context/ChatContext";
 import { X } from "lucide-react";
 import AdminNotificationPanel from "../AdminNotificationPanel";
-import ProfileCard from "./Components/ProfileCard";
-import GroupManager from "./Components/GroupManager";
-import MediaGallery from "./Components/MediaGallery";
-import SidebarActions from "./Components/SidebarActions";
+import ProfileCard from "./components/ProfileCard";
+import GroupManager from "./components/GroupManager";
+import MediaGallery from "./components/MediaGallery";
+import SidebarActions from "./components/SidebarActions";
 
 const RightSidebar = () => {
   const { selectedUser, selectedGroup, showInfoDrawer, setShowInfoDrawer } =
