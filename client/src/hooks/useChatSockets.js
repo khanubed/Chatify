@@ -12,6 +12,7 @@ export const useChatSockets = ({
   setTypingStatus,
   setGroups,
   getGroups,
+  setUsers,
   markAsSeen,
 }) => {
   useEffect(() => {

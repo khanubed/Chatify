@@ -83,6 +83,7 @@ export const ChatProvider = ({ children }) => {
     setTypingStatus,
     setGroups,
     getGroups: () => getGroups(),
+    setUsers,
     markAsSeen,
   });
 
