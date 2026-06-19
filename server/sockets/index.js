@@ -14,7 +14,6 @@ export const initSocketServer = (server) => {
     maxHttpBufferSize: 50 * 1024 * 1024,
   });
 
-  // 🌟 FIX: Register authentication middleware cleanly
   io.use(socketAuth);
 
   io.on("connection", (socket) => {

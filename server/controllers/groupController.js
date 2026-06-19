@@ -70,28 +70,28 @@ export const getGroups = async (req, res) => {
   }
 };
 
-export const markGroupAsSeen = async (req, res) => {
-  try {
-    const { id: groupId } = req.params;
-    const userId = req.user._id;
+// export const markGroupAsSeen = async (req, res) => {
+//   try {
+//     const { id: groupId } = req.params;
+//     const userId = req.user._id;
 
-    await Message.updateMany(
-      {
-        groupId: groupId,
-        seenBy: { $ne: userId },
-        senderId: { $ne: userId },
-      },
-      {
-        $addToSet: { seenBy: userId },
-      },
-    );
+//     await Message.updateMany(
+//       {
+//         groupId: groupId,
+//         seenBy: { $ne: userId },
+//         senderId: { $ne: userId },
+//       },
+//       {
+//         $addToSet: { seenBy: userId },
+//       },
+//     );
 
-    res.json({ success: true });
-  } catch (error) {
-    console.log(error.message);
-    res.json({ success: false, message: error.message });
-  }
-};
+//     res.json({ success: true });
+//   } catch (error) {
+//     console.log(error.message);
+//     res.json({ success: false, message: error.message });
+//   }
+// };
 
 export const addGroupMember = async (req, res) => {
   try {

@@ -1,10 +1,14 @@
-import React, { useContext } from "react";
+import React, { useContext, useState, useEffect, useRef } from "react";
 import { ChatContext } from "../../../context/ChatContext";
 import { AuthContext } from "../../../context/AuthContext";
 
 const NotificationBell = () => {
   const { groups = [], handleAdminAction } = useContext(ChatContext);
   const { authUser } = useContext(AuthContext);
+
+  const [isOpen, setIsOpen] = useState(false);
+
+  const bellRef = useRef(null);
 
   const adminGroupsWithRequests = groups.filter(
     (group) =>
@@ -14,16 +18,34 @@ const NotificationBell = () => {
 
   const hasPendingRequests = adminGroupsWithRequests.length > 0;
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (bellRef.current && !bellRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
-    <div className="relative py-2 group">
-      <button className="relative text-gray-400 hover:text-blue-400 transition-colors text-base flex items-center justify-center">
+    <div ref={bellRef} className="relative py-2">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative text-gray-400 hover:text-blue-400 transition-colors text-base flex items-center justify-center"
+      >
         <span className="text-lg">🔔</span>
         {hasPendingRequests && (
           <span className="absolute top-1 right-0 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
         )}
       </button>
 
-      <div className="absolute top-full -right-10 z-50 overflow-x-clip w-72 rounded-md bg-[#212b42] p-4 border border-gray-600 text-gray-100 hidden group-hover:block shadow-xl max-h-64 overflow-y-auto custom-scrollbar">
+      <div
+        className={`absolute top-full -right-10 z-50 overflow-x-clip w-72 rounded-md bg-[#212b42] p-4 border border-gray-600 text-gray-100 shadow-xl max-h-64 overflow-y-auto custom-scrollbar transition-all ${
+          isOpen ? "block" : "hidden"
+        }`}
+      >
         <h3 className="text-xs font-semibold text-blue-400 mb-2">
           Join Requests
         </h3>
@@ -47,17 +69,27 @@ const NotificationBell = () => {
                     </div>
                     <div className="flex gap-2 justify-end">
                       <button
-                        onClick={() =>
-                          handleAdminAction(group._id, applicant._id, "reject")
-                        }
+                        onClick={() => {
+                          handleAdminAction(group._id, applicant._id, "reject");
+                          if (
+                            adminGroupsWithRequests.length === 1 &&
+                            group.requests.length === 1
+                          )
+                            setIsOpen(false);
+                        }}
                         className="px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500 transition-colors text-gray-200"
                       >
                         Decline
                       </button>
                       <button
-                        onClick={() =>
-                          handleAdminAction(group._id, applicant._id, "accept")
-                        }
+                        onClick={() => {
+                          handleAdminAction(group._id, applicant._id, "accept");
+                          if (
+                            adminGroupsWithRequests.length === 1 &&
+                            group.requests.length === 1
+                          )
+                            setIsOpen(false);
+                        }}
                         className="px-2 py-0.5 rounded bg-blue-500 hover:bg-blue-600 transition-colors text-white font-medium"
                       >
                         Accept
