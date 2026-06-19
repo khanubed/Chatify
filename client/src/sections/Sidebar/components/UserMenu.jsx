@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { AuthContext } from "../../context/AuthContext";
-import assets from "../../assets/assets";
+import { AuthContext } from "../../../context/AuthContext";
+import assets from "../../../assets/assets";
 
 const UserMenu = () => {
   const { logout } = useContext(AuthContext);

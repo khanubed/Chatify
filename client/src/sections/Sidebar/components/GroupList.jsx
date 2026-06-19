@@ -1,9 +1,18 @@
 import React, { useContext } from "react";
-import { ChatContext } from "../../context/ChatContext";
-import { AuthContext } from "../../context/AuthContext";
+import { ChatContext } from "../../../context/ChatContext";
+import { AuthContext } from "../../../context/AuthContext";
 
 const GroupList = ({ search }) => {
-  const { groups = [], unseenGroups, setSelectedUser, setSelectedGroup, setUnseenGroups, setShowInfoDrawer, selectedGroup, requestToJoinGroup } = useContext(ChatContext);
+  const {
+    groups = [],
+    unseenGroups,
+    setSelectedUser,
+    setSelectedGroup,
+    setUnseenGroups,
+    setShowInfoDrawer,
+    selectedGroup,
+    requestToJoinGroup,
+  } = useContext(ChatContext);
   const { authUser } = useContext(AuthContext);
 
   const filteredGroups = search
@@ -22,7 +31,9 @@ const GroupList = ({ search }) => {
   };
 
   if (filteredGroups.length === 0) {
-    return <p className="text-xs text-gray-500 text-center mt-4">No groups found</p>;
+    return (
+      <p className="text-xs text-gray-500 text-center mt-4">No groups found</p>
+    );
   }
 
   return (
@@ -30,8 +41,12 @@ const GroupList = ({ search }) => {
       {filteredGroups.map((group) => {
         const groupIdString = group._id?.toString();
         const groupCount = unseenGroups ? unseenGroups[groupIdString] || 0 : 0;
-        const isMember = group.members?.some((m) => (m._id || m) === authUser._id);
-        const hasRequested = group.requests?.some((r) => (r._id || r) === authUser._id);
+        const isMember = group.members?.some(
+          (m) => (m._id || m) === authUser._id,
+        );
+        const hasRequested = group.requests?.some(
+          (r) => (r._id || r) === authUser._id,
+        );
 
         return (
           <div
@@ -45,13 +60,17 @@ const GroupList = ({ search }) => {
               </div>
               <div className="flex flex-col leading-5">
                 <p>{group.name}</p>
-                <span className="text-xs text-neutral-400">{group.members?.length || 0} members</span>
+                <span className="text-xs text-neutral-400">
+                  {group.members?.length || 0} members
+                </span>
               </div>
             </div>
 
             {!isMember ? (
               hasRequested ? (
-                <span className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-1 rounded-full border border-yellow-500/20 font-medium">Pending</span>
+                <span className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-1 rounded-full border border-yellow-500/20 font-medium">
+                  Pending
+                </span>
               ) : (
                 <button
                   onClick={(e) => {
@@ -65,7 +84,9 @@ const GroupList = ({ search }) => {
               )
             ) : (
               groupCount > 0 && (
-                <p className="absolute top-4 right-4 text-xs h-5 w-5 flex justify-center items-center rounded-full bg-blue-500 text-white font-bold">{groupCount}</p>
+                <p className="absolute top-4 right-4 text-xs h-5 w-5 flex justify-center items-center rounded-full bg-blue-500 text-white font-bold">
+                  {groupCount}
+                </p>
               )
             )}
           </div>

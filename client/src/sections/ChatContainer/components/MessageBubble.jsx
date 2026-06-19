@@ -11,13 +11,13 @@ import {
 import assets from "../../../assets/assets";
 import { formatMessageTime } from "../../../lib/utils";
 import { ChatContext } from "../../../context/ChatContext";
-import ReactionModal from "../ReactionModal";
+import ReactionModal from "./ReactionModal";
 import ForwardModal from "./ForwardModal"; // 🌟 Imported ForwardModal
 
 // Media UI Engines
 import { Plyr } from "plyr-react";
-import "../../../node_modules/plyr-react/dist/plyr.css";
-import VoiceNotePlayer from "../VoiceNotePlayer";
+import "../../../../node_modules/plyr-react/dist/plyr.css";
+import VoiceNotePlayer from "./VoiceNotePlayer";
 import CallLogMessage from "./CallLogMessage";
 
 const EMOJI_OPTIONS = ["❤️", "👍", "😂", "😮", "😢", "🙏"];

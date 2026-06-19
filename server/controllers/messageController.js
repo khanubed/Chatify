@@ -9,25 +9,80 @@ import { uploadToCloudinary } from "../lib/multer.js";
 export const getUsersForSideBar = async (req, res) => {
   try {
     const userId = req.user._id;
+    const currentUser = await User.findById(userId).select("blockedUsers");
     const users = await User.find({ _id: { $ne: userId } }).select("-password");
 
-    const formattedUsers = users.map((user) => ({
-      ...user._doc,
-      hasBlockedMe: user.blockedUsers?.includes(userId) || false,
-    }));
+    // Determine block status label for each user
+    const myBlockedIds = (currentUser.blockedUsers || []).map((id) =>
+      id.toString(),
+    );
 
+    const formattedUsers = users.map((user) => {
+      const theyBlockedMe = user.blockedUsers?.some(
+        (id) => id && id.toString() === userId.toString(),
+      );
+      const iBlockedThem = myBlockedIds.includes(user._id.toString());
+
+      let blockStatus = null;
+      if (iBlockedThem) blockStatus = "blockedByMe";
+      else if (theyBlockedMe) blockStatus = "blockedMe";
+
+      // 🌟 Extract blockedUsers out and gather the rest of the fields into cleanedUser
+      const { blockedUsers, ...cleanedUser } = user._doc;
+
+      return {
+        ...cleanedUser, // Spread only the cleaned fields
+        hasBlockedMe: theyBlockedMe || false,
+        blockStatus,
+      };
+    });
+
+    // Fetch the most recent message timestamp for each user (sent or received)
     const unseenMessages = {};
+    const lastMessageTimes = {};
+
     const promises = formattedUsers.map(async (user) => {
-      const messages = await Message.find({
+      // Unseen count
+      const unseenCount = await Message.countDocuments({
         senderId: user._id,
         receiverId: userId,
         seenBy: { $ne: userId },
       });
-      if (messages.length > 0) {
-        unseenMessages[user._id] = messages.length;
+      if (unseenCount > 0) {
+        unseenMessages[user._id] = unseenCount;
       }
+
+      // Most recent message between this user and the logged-in user
+      const lastMessage = await Message.findOne({
+        $or: [
+          { senderId: userId, receiverId: user._id },
+          { senderId: user._id, receiverId: userId },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .select("createdAt")
+        .lean();
+
+      lastMessageTimes[user._id.toString()] = lastMessage
+        ? lastMessage.createdAt
+        : null;
     });
     await Promise.all(promises);
+
+    // Sort users: most recent conversation first, users with no history go to the bottom
+    formattedUsers.sort((a, b) => {
+      const timeA = lastMessageTimes[a._id.toString()];
+      const timeB = lastMessageTimes[b._id.toString()];
+
+      // Both have message history — most recent first
+      if (timeA && timeB) return new Date(timeB) - new Date(timeA);
+      // Only one has history — they come first
+      if (timeA && !timeB) return -1;
+      if (!timeA && timeB) return 1;
+      // Neither has history — sort by account creation date
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
     res.json({ success: true, users: formattedUsers, unseenMessages });
   } catch (error) {
     console.log(error.message);
@@ -108,12 +163,10 @@ export const uploadAsset = async (req, res) => {
     });
   } catch (error) {
     console.error("Asset upload failure:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Internal server storage upload error.",
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Internal server storage upload error.",
+    });
   }
 };
 // export const sendMessage = async (req, res) => {

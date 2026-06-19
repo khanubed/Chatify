@@ -6,8 +6,10 @@ import {
   useContext,
 } from "react";
 import { AuthContext } from "./AuthContext";
+import { chatService } from "../services/chatService";
+import { groupService } from "../services/groupService";
+import { useChatSockets } from "../hooks/useChatSockets";
 import toast from "react-hot-toast";
-import API from "../api/axios"; // Consistent configured instance
 
 export const ChatContext = createContext();
 
@@ -25,23 +27,26 @@ export const ChatProvider = ({ children }) => {
 
   const { socket, authUser, setAuthUser } = useContext(AuthContext);
 
+  // Centralized real-time execution wrapper
   const emitSocketAction = useCallback(
     (eventName, payload, timeout = 30000) =>
       new Promise((resolve, reject) => {
-        if (!socket) {
-          reject(new Error("Chat disconnected"));
-          return;
-        }
+        if (!socket) return reject(new Error("Chat disconnected"));
 
         socket.timeout(timeout).emit(eventName, payload, (error, response) => {
-          if (error) {
-            reject(new Error("Socket request timed out"));
-            return;
-          }
+          if (error) return reject(new Error("Socket request timed out"));
 
           if (!response?.success) {
-            reject(new Error(response?.message || "Socket action failed"));
-            return;
+            const errMsg = response?.message || "Socket action failed";
+
+            if (
+              errMsg.toLowerCase().includes("blocked") ||
+              errMsg.toLowerCase().includes("unblock")
+            ) {
+              toast.error(errMsg);
+            }
+
+            return reject(new Error(errMsg));
           }
 
           resolve(response);
@@ -50,232 +55,7 @@ export const ChatProvider = ({ children }) => {
     [socket],
   );
 
-  const formDataToSocketPayload = async (formData, targetId, isGroupChat) => {
-    const payload = {
-      targetId,
-      isGroup: isGroupChat,
-    };
-
-    for (const [key, value] of formData.entries()) {
-      if (key === "file" && value instanceof Blob) {
-        payload.file = {
-          originalname: value.name || "voice-message.webm",
-          mimetype: value.type,
-          size: value.size,
-          buffer: await value.arrayBuffer(),
-        };
-      } else {
-        payload[key] = value;
-      }
-    }
-
-    if (isGroupChat) payload.groupId = payload.groupId || targetId;
-    return payload;
-  };
-
-  const getUsers = async () => {
-    try {
-      const { data } = await API.get("/messages/users");
-      if (data.success) {
-        setUsers(data.users);
-        setUnseenMessages((prev) => ({ ...prev, ...data.unseenMessages }));
-      }
-    } catch (error) {
-      toast.error(error.message || "Failed to fetch users");
-    }
-  };
-
-  const getGroups = async () => {
-    try {
-      const { data } = await API.get("/groups/all");
-      if (data.success) {
-        setGroups(data.groups);
-        console.log(data.groups);
-        if (data.unseenGroups) setUnseenGroups(data.unseenGroups);
-
-        if (socket && data.groups?.length > 0) {
-          data.groups.forEach((group) => {
-            socket.emit("joinGroup", group._id?.toString());
-          });
-        }
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to fetch groups");
-    }
-  };
-
-  const createGroup = async (groupData) => {
-    try {
-      const { data } = await API.post("/groups/create", groupData);
-      if (data.success) {
-        setGroups((prevGroups) => [...prevGroups, data.group]);
-        toast.success(`Group "${groupData.name}" created successfully!`);
-        return true;
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to create group");
-      return false;
-    }
-  };
-
-  const getMessages = async (targetId, isGroupChat = false) => {
-    try {
-      const { data } = await API.get(
-        `/messages/${targetId}?isGroup=${isGroupChat}`,
-      );
-      if (data.success) {
-        setMessages(data.messages);
-        markAsSeen(targetId, isGroupChat);
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to fetch messages");
-    }
-  };
-  const sendMessage = async (
-    formData, // Expecting standard FormData instance passed down out of ChatInput
-    customTargetId = null,
-    customIsGroup = null,
-  ) => {
-    try {
-      const isGroupChat =
-        customIsGroup !== null ? customIsGroup : !!selectedGroup;
-      const targetId =
-        customTargetId ||
-        (isGroupChat ? selectedGroup?._id : selectedUser?._id);
-
-      if (!targetId) return;
-      if (!socket) return toast.error("Chat disconnected. Unable to send.");
-
-      // 🌟 1. Check if an media file exists inside the payload
-      const fileAsset = formData.get("file");
-      let uploadedMediaUrl = null;
-      let autoDetectedType = null;
-
-      if (fileAsset) {
-        const uploadFormData = new FormData();
-        uploadFormData.append("file", fileAsset);
-
-        // Hit standard optimized express router middleware endpoint
-        const { data: uploadData } = await API.post(
-          "/messages/upload-asset",
-          uploadFormData,
-          { headers: { "Content-Type": "multipart/form-data" } },
-        );
-
-        uploadedMediaUrl = uploadData.secure_url;
-
-        if (uploadData.mimetype.startsWith("image/"))
-          autoDetectedType = "image";
-        else if (uploadData.mimetype.startsWith("audio/"))
-          autoDetectedType = "audio";
-        else if (uploadData.mimetype.startsWith("video/"))
-          autoDetectedType = "video";
-      }
-
-      // 🌟 2. Construct clean JSON data context payload parameters
-      const socketPayload = {
-        text: formData.get("text") || "",
-        targetId: targetId,
-        groupId: isGroupChat ? targetId : null,
-        isGroup: isGroupChat,
-        parent: formData.get("parent"),
-        isForwarded: formData.get("isForwarded") || false,
-        messageType: autoDetectedType || formData.get("messageType") || "text",
-
-        // Inject standard CDN links derived out of our step-1 API handler
-        image: autoDetectedType === "image" ? uploadedMediaUrl : null,
-        audio: autoDetectedType === "audio" ? uploadedMediaUrl : null,
-        video: autoDetectedType === "video" ? uploadedMediaUrl : null,
-      };
-
-      // 🌟 3. Emit pure flat JSON down through your socket lifecycle hook
-      const data = await emitSocketAction("sendMessage", socketPayload, 15000); // 15s timeout is plenty for JSON
-
-      if (data.success) {
-        const currentActiveId = selectedGroup?._id || selectedUser?._id;
-        if (targetId === currentActiveId) {
-          setMessages((prevMessages) => [...prevMessages, data.newMessage]);
-        } else {
-          toast.success("Message forwarded!");
-        }
-      } else {
-        toast.error(data.message || "Failed to send message");
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error(
-        error.response?.data?.message || "Failed to dispatch message",
-      );
-    }
-  };
-
-  const editMessage = async (messageId, newText) => {
-    if (!socket) return toast.error("Chat disconnected. Unable to edit.");
-    try {
-      // Emit directly to the backend socket, skipping HTTP API overhead layers
-      await emitSocketAction("editMessage", { messageId, newText });
-    } catch (err) {
-      console.error("Failed handling execution logic for editing:", err);
-      toast.error(err.message || "Failed to edit message");
-    }
-  };
-
-  const deleteMessage = async (messageId) => {
-    if (!socket) return toast.error("Chat disconnected. Unable to delete.");
-    try {
-      // Dispatch soft-delete order sequence down real-time pathways
-      await emitSocketAction("deleteMessage", { messageId });
-    } catch (err) {
-      console.error("Failed handling execution logic for deleting:", err);
-      toast.error(err.message || "Failed to delete message");
-    }
-  };
-
-  const handleMessageReaction = async (messageId, emoji) => {
-    if (!socket) return toast.error("Chat disconnected.");
-
-    // OPTIMISTIC UPDATE: Update UI immediately for real-time responsiveness
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) => {
-        if (msg._id !== messageId) return msg;
-
-        const reactions = msg.reactions || [];
-        const existingIndex = reactions.findIndex(
-          (r) =>
-            (r.userId?._id || r.userId)?.toString() === authUser._id.toString(),
-        );
-
-        let updatedReactions = [...reactions];
-
-        if (existingIndex > -1) {
-          if (updatedReactions[existingIndex].emoji === emoji) {
-            updatedReactions.splice(existingIndex, 1);
-          } else {
-            updatedReactions[existingIndex] = {
-              ...updatedReactions[existingIndex],
-              emoji,
-            };
-          }
-        } else {
-          updatedReactions.push({ userId: authUser._id, emoji });
-        }
-
-        return { ...msg, reactions: updatedReactions };
-      }),
-    );
-
-    try {
-      // Send execution details down websocket line rather than hitting API endpoint path layouts
-      await emitSocketAction("toggleReaction", { messageId, emoji });
-    } catch (error) {
-      console.error(
-        "Failed syncing reaction parameters down socket structure:",
-        error,
-      );
-    }
-  };
-
-  // Shared Seen Marker Trigger Block
+  // Shared Seen Receipt Sync Wrapper
   const markAsSeen = useCallback(
     async (chatId, isGroupChat = false) => {
       if (!socket || !chatId) return;
@@ -291,12 +71,230 @@ export const ChatProvider = ({ children }) => {
     [socket, emitSocketAction],
   );
 
+  // Sync Background Core Dynamic Sockets Channel Observers
+  useChatSockets({
+    socket,
+    authUser,
+    selectedUser,
+    selectedGroup,
+    setMessages,
+    setUnseenMessages,
+    setUnseenGroups,
+    setTypingStatus,
+    setGroups,
+    getGroups: () => getGroups(),
+    markAsSeen,
+  });
+
+  // REST Interface Dispatch Actions
+  const getUsers = async () => {
+    try {
+      const data = await chatService.fetchUsers();
+      if (data.success) {
+        setUsers(data.users);
+        setUnseenMessages((prev) => ({ ...prev, ...data.unseenMessages }));
+      }
+    } catch (error) {
+      toast.error(error.message || "Failed to fetch users");
+    }
+  };
+
+  const getGroups = async () => {
+    try {
+      const data = await groupService.fetchGroups();
+      if (data.success) {
+        setGroups(data.groups);
+        if (data.unseenGroups) setUnseenGroups(data.unseenGroups);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to fetch groups");
+    }
+  };
+
+  // Autojoin socket rooms whenever group indices refresh
+  useEffect(() => {
+    if (!socket || groups.length === 0) return;
+    groups.forEach((group) => {
+      socket.emit("joinGroup", group._id?.toString());
+    });
+  }, [socket, groups]);
+
+  const createGroup = async (groupData) => {
+    try {
+      const data = await groupService.create(groupData);
+      if (data.success) {
+        setGroups((prev) => [...prev, data.group]);
+        toast.success(`Group "${groupData.name}" created successfully!`);
+        return true;
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to create group");
+      return false;
+    }
+  };
+
+  const getMessages = async (targetId, isGroupChat = false) => {
+    try {
+      const data = await chatService.fetchMessages(targetId, isGroupChat);
+      if (data.success) {
+        setMessages(data.messages);
+        markAsSeen(targetId, isGroupChat);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to fetch messages");
+    }
+  };
+
+  const sendMessage = async (
+    formData,
+    customTargetId = null,
+    customIsGroup = null,
+  ) => {
+    try {
+      const isGroupChat =
+        customIsGroup !== null ? customIsGroup : !!selectedGroup;
+      const targetId =
+        customTargetId ||
+        (isGroupChat ? selectedGroup?._id : selectedUser?._id);
+
+      if (!targetId) return;
+      if (!socket) return toast.error("Chat disconnected. Unable to send.");
+
+      const fileAsset = formData.get("file");
+      let uploadedMediaUrl = null;
+      let autoDetectedType = null;
+
+      if (fileAsset) {
+        const uploadData = await chatService.uploadAsset(fileAsset);
+        uploadedMediaUrl = uploadData.secure_url;
+
+        if (uploadData.mimetype.startsWith("image/"))
+          autoDetectedType = "image";
+        else if (uploadData.mimetype.startsWith("audio/"))
+          autoDetectedType = "audio";
+        else if (uploadData.mimetype.startsWith("video/"))
+          autoDetectedType = "video";
+      }
+
+      const socketPayload = {
+        text: formData.get("text") || "",
+        targetId,
+        groupId: isGroupChat ? targetId : null,
+        isGroup: isGroupChat,
+        parent: formData.get("parent"),
+        isForwarded: formData.get("isForwarded") || false,
+        messageType: autoDetectedType || formData.get("messageType") || "text",
+        image: autoDetectedType === "image" ? uploadedMediaUrl : null,
+        audio: autoDetectedType === "audio" ? uploadedMediaUrl : null,
+        video: autoDetectedType === "video" ? uploadedMediaUrl : null,
+      };
+
+      const data = await emitSocketAction("sendMessage", socketPayload, 15000);
+
+      if (data.success) {
+        // 🌟 Handle Sidebar Rearrangements Dynamically
+        if (isGroupChat) {
+          // Bubble group item to index 0
+          setGroups((prevGroups) => {
+            const targetGroup = prevGroups.find((g) => g._id === targetId);
+            if (!targetGroup) return prevGroups;
+
+            const remainingGroups = prevGroups.filter(
+              (g) => g._id !== targetId,
+            );
+            return [targetGroup, ...remainingGroups];
+          });
+        } else {
+          // Bubble private user item to index 0
+          setUsers((prevUsers) => {
+            const targetUser = prevUsers.find((u) => u._id === targetId);
+            if (!targetUser) return prevUsers;
+
+            const remainingUsers = prevUsers.filter((u) => u._id !== targetId);
+            return [targetUser, ...remainingUsers];
+          });
+        }
+
+        const currentActiveId = selectedGroup?._id || selectedUser?._id;
+        if (targetId === currentActiveId) {
+          setMessages((prev) => [...prev, data.newMessage]);
+        } else {
+          toast.success("Message forwarded!");
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to dispatch message",
+      );
+    }
+  };  
+
+  const editMessage = async (messageId, newText) => {
+    if (!socket) return toast.error("Chat disconnected.");
+    try {
+      await emitSocketAction("editMessage", { messageId, newText });
+    } catch (err) {
+      toast.error(err.message || "Failed to edit message");
+    }
+  };
+
+  const deleteMessage = async (messageId) => {
+    if (!socket) return toast.error("Chat disconnected.");
+    try {
+      await emitSocketAction("deleteMessage", { messageId });
+    } catch (err) {
+      toast.error(err.message || "Failed to delete message");
+    }
+  };
+
+  const handleMessageReaction = async (messageId, emoji) => {
+    if (!socket) return toast.error("Chat disconnected.");
+
+    // Optimistic UI updates implementation mapping strategy
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg._id !== messageId) return msg;
+        const reactions = msg.reactions || [];
+        const existingIndex = reactions.findIndex(
+          (r) =>
+            (r.userId?._id || r.userId)?.toString() === authUser._id.toString(),
+        );
+
+        let updatedReactions = [...reactions];
+        if (existingIndex > -1) {
+          if (updatedReactions[existingIndex].emoji === emoji)
+            updatedReactions.splice(existingIndex, 1);
+          else
+            updatedReactions[existingIndex] = {
+              ...updatedReactions[existingIndex],
+              emoji,
+            };
+        } else {
+          updatedReactions.push({ userId: authUser._id, emoji });
+        }
+        return { ...msg, reactions: updatedReactions };
+      }),
+    );
+
+    try {
+      await emitSocketAction("toggleReaction", { messageId, emoji });
+    } catch (error) {
+      console.error(
+        "Failed handling syncing reaction setup configurations:",
+        error,
+      );
+    }
+  };
+
   const addGroupMember = async (groupId, userId) => {
     try {
-      const res = await API.post(`/groups/${groupId}/add`, { userId });
+      const res = await groupService.addMember(groupId, userId);
       setSelectedGroup((prev) => ({
         ...prev,
-        members: [...prev.members, res.data.newMember],
+        members: [...prev.members, res.newMember],
       }));
       toast.success("Member added successfully!");
     } catch (error) {
@@ -306,8 +304,7 @@ export const ChatProvider = ({ children }) => {
 
   const getNonGroupMembers = async (groupId) => {
     try {
-      const res = await API.get(`/groups/${groupId}/non-members`);
-      return res.data;
+      return await groupService.fetchNonMembers(groupId);
     } catch (error) {
       console.error("Error fetching non-group members:", error);
       return [];
@@ -316,11 +313,10 @@ export const ChatProvider = ({ children }) => {
 
   const leaveGroupAction = async (groupId) => {
     try {
-      await API.patch(`/groups/${groupId}/leave`);
+      await groupService.leave(groupId);
       getGroups();
       setSelectedGroup(null);
       setMessages([]);
-      // Optionally trigger a state refresh for your sidebar group listing array here
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to leave group");
     }
@@ -328,17 +324,26 @@ export const ChatProvider = ({ children }) => {
 
   const toggleBlockUserAction = async (userId) => {
     try {
-      const response = await API.patch(`/auth/block/${userId}`);
+      const data = await groupService.toggleBlockUser(userId);
 
-      // Update local authUser state with the new blockedUsers array returns
-      setAuthUser((prev) => ({
-        ...prev,
-        blockedUsers: response.data.blockedUsers,
-      }));
+      setAuthUser((prev) => ({ ...prev, blockedUsers: data.blockedUsers }));
 
-      // Clean up current active window context view states
       setSelectedUser(null);
       setMessages([]);
+
+      setUsers((prevUsers) =>
+        prevUsers.map((user) => {
+          if (user._id === userId) {
+            const isNowBlocked = data.blockedUsers.includes(userId);
+
+            return {
+              ...user,
+              blockStatus: isNowBlocked ? "blockedByMe" : null,
+            };
+          }
+          return user;
+        }),
+      );
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to block user");
     }
@@ -346,10 +351,10 @@ export const ChatProvider = ({ children }) => {
 
   const requestToJoinGroup = async (groupId) => {
     try {
-      const { data } = await API.post(`/groups/request/${groupId}`);
+      const data = await groupService.requestJoin(groupId);
       if (data.success) {
         toast.success(data.message);
-        if (getGroups) getGroups(); // Refresh layouts mapping structures
+        getGroups();
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to submit request");
@@ -358,35 +363,26 @@ export const ChatProvider = ({ children }) => {
 
   const handleAdminAction = async (groupId, applicantId, action) => {
     try {
-      const { data } = await API.post(`/groups/resolve-request`, {
+      const data = await groupService.resolveRequest(
         groupId,
         applicantId,
         action,
-      });
-      if (data.success) {
-        toast.success(data.message);
-        if (getGroups) getGroups();
-      }
-
-      await getGroups();
+      );
+      if (data.success) toast.success(data.message);
+      getGroups();
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to resolve action");
     }
   };
+
   const forwardMessage = async (messageToForward, targetId, isGroupTarget) => {
     try {
       const formData = new FormData();
-
-      // 🌟 Append text content and core meta configurations
       formData.append("text", messageToForward.text || "");
       formData.append("isGroup", isGroupTarget ? "true" : "false");
-      formData.append("isForwarded", "true"); // Tells database to attach the flag
+      formData.append("isForwarded", "true");
 
-      if (isGroupTarget) {
-        formData.append("groupId", targetId);
-      }
-
-      // 🌟 Pass existing asset strings directly instead of binary file chunks
+      if (isGroupTarget) formData.append("groupId", targetId);
       if (messageToForward.image)
         formData.append("image", messageToForward.image);
       if (messageToForward.audio)
@@ -394,7 +390,6 @@ export const ChatProvider = ({ children }) => {
       if (messageToForward.video)
         formData.append("video", messageToForward.video);
 
-      // 🌟 Route it right through your existing centralized engine!
       await sendMessage(formData, targetId, isGroupTarget);
       return true;
     } catch (error) {
@@ -403,15 +398,12 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
-  // 🌟 UPDATED: Accepts explicit payload overrides to prevent room-switching race conditions
   const sendTypingStatus = (
     isTyping,
     forcedChatId = null,
     forcedIsGroup = null,
   ) => {
     if (!socket) return;
-
-    // Use explicit overrides if passed from the cleanup hook, otherwise fallback to standard state
     const resolveIsGroup =
       forcedIsGroup !== null ? forcedIsGroup : !!selectedGroup;
     const targetChatId =
@@ -432,206 +424,6 @@ export const ChatProvider = ({ children }) => {
       });
     }
   };
-
-  useEffect(() => {
-    if (!socket || groups.length === 0) return;
-    groups.forEach((group) => {
-      socket.emit("joinGroup", group._id?.toString());
-    });
-  }, [socket, groups]);
-
-  // Real-Time Socket Event Handling Layer
-  useEffect(() => {
-    if (!socket) return;
-    const triggerNotification = (message, isGroupMsg) => {
-      const senderName =
-        message.senderId?.fullName || message.senderId?.name || "Someone";
-      const notificationBody = message.text || "📷 Sent an attachment";
-      const title = isGroupMsg
-        ? `New message in Group`
-        : `New message from ${senderName}`;
-
-      toast(`${title}: ${notificationBody}`);
-    };
-
-    const handleNewMessage = (newMessage) => {
-      console.log(newMessage);
-      const rawSenderId = newMessage.senderId?._id || newMessage.senderId;
-      const senderUserIdString = rawSenderId?.toString();
-      const authUserIdString = authUser?._id?.toString();
-
-      if (newMessage.groupId) {
-        console.log("new message emitted");
-        setSelectedGroup((currentGroup) => {
-          const currentActiveId = currentGroup?._id?.toString();
-          const incomingTargetId = newMessage.groupId?.toString();
-
-          if (currentGroup && incomingTargetId === currentActiveId) {
-            if (senderUserIdString === authUserIdString) return currentGroup;
-
-            setMessages((prevMessages) => [...prevMessages, newMessage]);
-            markAsSeen(incomingTargetId, true);
-          } else {
-            setUnseenGroups((prevUnseenGroups) => ({
-              ...prevUnseenGroups,
-              [incomingTargetId]: (prevUnseenGroups[incomingTargetId] || 0) + 1,
-            }));
-
-            if (senderUserIdString !== authUserIdString) {
-              triggerNotification(newMessage, true);
-            }
-          }
-          return currentGroup;
-        });
-        return;
-      }
-
-      if (senderUserIdString === authUserIdString) return;
-
-      setSelectedUser((currentUser) => {
-        const activeUserId = currentUser?._id?.toString();
-
-        if (currentUser && senderUserIdString === activeUserId) {
-          setMessages((prevMessages) => [...prevMessages, newMessage]);
-          markAsSeen(senderUserIdString, false);
-        } else {
-          setUnseenMessages((prevUnseenMessages) => ({
-            ...prevUnseenMessages,
-            [senderUserIdString]:
-              (prevUnseenMessages[senderUserIdString] || 0) + 1,
-          }));
-
-          triggerNotification(newMessage, false);
-        }
-        return currentUser;
-      });
-    };
-
-    socket.on("messageUpdated", (updatedMsg) => {
-      setMessages((prev) =>
-        prev.map((msg) => (msg._id === updatedMsg._id ? updatedMsg : msg)),
-      );
-    });
-
-    socket.on("messageRemoved", (deletedMsg) => {
-      setMessages((prev) =>
-        prev.map((msg) => (msg._id === deletedMsg._id ? deletedMsg : msg)),
-      );
-    });
-
-    socket.on("userSeenReceipt", ({ user }) => {
-      setMessages((prev) =>
-        prev.map((msg) => {
-          const existingViewerIds =
-            msg.seenBy?.map((v) => (v._id || v)?.toString()) || [];
-          const newViewerId = (user._id || user)?.toString();
-
-          if (!existingViewerIds.includes(newViewerId)) {
-            return {
-              ...msg,
-              seenBy: [...(msg.seenBy || []), user],
-            };
-          }
-          return msg;
-        }),
-      );
-    });
-
-    socket.on("newMessage", handleNewMessage);
-
-    socket.on("requestAction", ({ groupName, action }) => {
-      getGroups();
-      if (action === "accept") {
-        toast.success(`${groupName} request accepted `);
-      } else {
-        toast.error(`${groupName} request rejected `);
-      }
-    });
-
-    socket.on("requestedToJoin", () => {
-      toast.success("New join request received");
-      getGroups();
-    });
-
-    socket.on("reactionUpdated", (updatedMessage) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg._id === updatedMessage._id ? updatedMessage : msg,
-        ),
-      );
-    });
-
-    socket.on("socketActionError", ({ message }) => {
-      if (message) toast.error(message);
-    });
-
-    socket.on("displayTyping", (data) => {
-      console.log("Raw displayTyping payload from backend:", data);
-
-      // Fallback map matching what your backend is ACTUALLY emitting
-      const isGroup = data.isGroup ?? false;
-      const groupId = data.groupId || undefined;
-      const senderId =
-        data.senderId || data.senderIdString || data.userId || data.from;
-      const senderName = data.senderName || "Someone";
-
-      const chatId = isGroup ? groupId : senderId;
-
-      if (!chatId) {
-        console.error("Could not resolve a valid chatId from payload:", data);
-        return;
-      }
-
-      setTypingStatus((prev) => ({
-        ...prev,
-        [chatId]: isGroup
-          ? [
-              ...(prev[chatId] || []).filter((name) => name !== senderName),
-              senderName,
-            ]
-          : true,
-      }));
-    });
-
-    socket.on("hideTyping", (data) => {
-      console.log("Raw hideTyping payload from backend:", data);
-
-      const isGroup = data.isGroup ?? false;
-      const groupId = data.groupId || undefined;
-      const senderId =
-        data.senderId || data.senderIdString || data.userId || data.from;
-      const senderName = data.senderName || "Someone";
-
-      const chatId = isGroup ? groupId : senderId;
-
-      if (!chatId) return;
-
-      setTypingStatus((prev) => {
-        if (isGroup) {
-          const activeGroupTypers = prev[chatId] || [];
-          return {
-            ...prev,
-            [chatId]: activeGroupTypers.filter((name) => name !== senderName),
-          };
-        } else {
-          const updatedStatus = { ...prev };
-          delete updatedStatus[chatId];
-          return updatedStatus;
-        }
-      });
-    });
-    return () => {
-      socket.off("newMessage", handleNewMessage);
-      socket.off("messageUpdated");
-      socket.off("messageRemoved");
-      socket.off("userSeenReceipt");
-      socket.off("requestAction");
-      socket.off("reactionUpdated");
-      socket.off("socketActionError");
-      socket.off("displayTyping");
-      socket.off("hideTyping");
-    };
-  }, [socket, authUser?._id, markAsSeen]);
 
   return (
     <ChatContext.Provider

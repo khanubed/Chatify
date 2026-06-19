@@ -1,5 +1,5 @@
 import React from "react";
-import assets from "../../assets/assets";
+import assets from "../../../assets/assets";
 import NotificationBell from "./NotificationBell";
 import UserMenu from "./UserMenu";
 
@@ -20,7 +20,9 @@ const SidebarHeader = ({ activeTab, setSearch }) => {
           type="text"
           onChange={(e) => setSearch(e.target.value)}
           className="bg-transparent border-none outline-none text-xs placeholder-[#c8c8c8] flex-1 text-white"
-          placeholder={activeTab === "direct" ? "Search User" : "Search or Join Channels"}
+          placeholder={
+            activeTab === "direct" ? "Search User" : "Search or Join Channels"
+          }
         />
       </div>
     </div>
