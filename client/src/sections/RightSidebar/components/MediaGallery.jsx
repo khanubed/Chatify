@@ -6,15 +6,7 @@ const MediaGallery = () => {
   const { messages } = useContext(ChatContext);
   const [sharedMedia, setSharedMedia] = useState([]);
 
-  // 🐛 DEBUG LOG 1: Check if the component is even mounting
   useEffect(() => {
-    console.log("🟢 MediaGallery Component has successfully Mounted!");
-  }, []);
-
-  useEffect(() => {
-    // 🐛 DEBUG LOG 2: Inspect raw messages context data structure
-    console.log("📩 Raw messages received from context:", messages);
-
     if (messages && Array.isArray(messages)) {
       const mediaFiles = messages
         .filter((msg) => msg.image || msg.video)
@@ -22,18 +14,10 @@ const MediaGallery = () => {
           url: msg.image || msg.video,
           type: msg.image ? "image" : "video",
         }));
-      
+
       setSharedMedia(mediaFiles);
-    } else {
-      console.warn("⚠️ Messages is either missing or not a valid array.");
     }
   }, [messages]);
-
-  // 🐛 DEBUG LOG 3: Watch processed media state changes
-  useEffect(() => {
-    console.log("📸 Updated sharedMedia State:", sharedMedia);
-  }, [sharedMedia]);
-
   return (
     <div className="text-xs flex flex-col min-h-0 mt-2">
       <p className="text-gray-400 font-medium shrink-0">
