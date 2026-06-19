@@ -42,11 +42,21 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // 1. Look for the user
     const userData = await User.findOne({ email });
+    
+    // 🌟 FIXED: If no user matches the email, exit early!
+    if (!userData) {
+      return res.status(400).json({ success: false, message: "Invalid Credentials" });
+    }
+
+    // 2. Safely compare passwords now that we know userData isn't null
     const isPasswordMatched = await bcrypt.compare(password, userData.password);
     if (!isPasswordMatched) {
-      return res.json({ success: false, message: "Invalid Credentials" });
+      return res.status(400).json({ success: false, message: "Invalid Credentials" });
     }
+    
     const token = generateToken(userData._id);
 
     res.json({
@@ -57,7 +67,7 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.log(error.message);
-    res.json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: "An internal server error occurred" });
   }
 };
 
