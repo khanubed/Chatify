@@ -99,8 +99,6 @@ export const AuthProvider = ({ children }) => {
       auth: {
         token: activeToken,
       },
-      transports: ["websocket"],
-      upgrade: false,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 5000,

@@ -27,10 +27,8 @@ initSocketServer(server);
 await connectDB();
 const PORT = process.env.PORT || 5000;
 
-if (process.env.NODE_ENV !== "production") {
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log("Server is Running on port :" + PORT);
-  });
-}
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("Server is Running on port :" + PORT);
+});
 
 export default server;
