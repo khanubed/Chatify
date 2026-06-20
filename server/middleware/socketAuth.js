@@ -22,6 +22,6 @@ const socketAuth = async (socket, next) => {
     console.error("Socket Auth Failure:", err.message);
     return next(new Error("Authentication error: Invalid Token"));
   }
-}
+};
 
 export default socketAuth;
