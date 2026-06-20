@@ -10,7 +10,7 @@ const socketGroupCallMap = {};
 
 export const initSocketServer = (server) => {
   io = new Server(server, {
-    cors: { origin: "*" },
+    cors: { origin: process.env.FRONTEND_URL },
     maxHttpBufferSize: 50 * 1024 * 1024,
   });
 
