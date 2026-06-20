@@ -13,6 +13,7 @@ export const useChatSockets = ({
   setGroups,
   getGroups,
   setUsers,
+  setOnlineUsers, // ✨ ADDED: Hook into the dedicated real-time tracker passed from ChatProvider
   markAsSeen,
 }) => {
   useEffect(() => {
@@ -29,11 +30,12 @@ export const useChatSockets = ({
     };
 
     const handleNewMessage = (newMessage) => {
+      console.log("Real-time Message Received:", newMessage);
       const rawSenderId = newMessage.senderId?._id || newMessage.senderId;
       const senderUserIdString = rawSenderId?.toString();
       const authUserIdString = authUser?._id?.toString();
 
-      // Group context sorting logic
+      // --- Group Context Logic ---
       if (newMessage.groupId) {
         const incomingTargetId = newMessage.groupId?.toString();
         const currentActiveId = selectedGroup?._id?.toString();
@@ -64,6 +66,8 @@ export const useChatSockets = ({
         }
         return;
       }
+
+      // --- Private Message Context Logic ---
       if (senderUserIdString === authUserIdString) return;
       const activeUserId = selectedUser?._id?.toString();
 
@@ -91,7 +95,14 @@ export const useChatSockets = ({
       }
     };
 
+    // 🌟 FIX: Handle Real-Time Live List Synced From Server Map Strings
+    const handleOnlineUsers = (userIdsArray) => {
+      console.log("Updated Live Users Map:", userIdsArray);
+      setOnlineUsers(userIdsArray);
+    };
+
     // Subscriptions
+    socket.on("getOnlineUsers", handleOnlineUsers); // ✨ FIXED: Missing listener attached
     socket.on("newMessage", handleNewMessage);
 
     socket.on("messageUpdated", (updatedMsg) => {
@@ -183,6 +194,7 @@ export const useChatSockets = ({
 
     // Unmount cleanup sequence
     return () => {
+      socket.off("getOnlineUsers", handleOnlineUsers); // ✨ CLEANED UP
       socket.off("newMessage", handleNewMessage);
       socket.off("messageUpdated");
       socket.off("messageRemoved");
@@ -203,6 +215,9 @@ export const useChatSockets = ({
     setUnseenMessages,
     setUnseenGroups,
     setTypingStatus,
+    setGroups, // ✨ ADDED TO RUNTIME REFERENCE
+    setUsers, // ✨ FIXED: Added missing dependency mapping
+    setOnlineUsers, // ✨ ADDED TO RUNTIME REFERENCE
     getGroups,
     markAsSeen,
   ]);

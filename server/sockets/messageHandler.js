@@ -4,7 +4,7 @@ import Group from "../models/group.js";
 import { extractCloudinaryPublicId } from "../lib/util.js";
 import { v2 as cloudinary } from "cloudinary";
 
-export default (io, socket, userSocketMap) => {
+export default  (io, socket, userSocketMap) => {
   const getAuthenticatedUserId = () => {
     const userId = socket.user?._id || socket.request?.user?._id;
     if (!userId) {
@@ -183,8 +183,10 @@ export default (io, socket, userSocketMap) => {
         const receiverSocketId =
           userSocketMap[newMessage.receiverId?.toString()];
         // if (receiverSocketId) io.to(receiverSocketId).emit("newMessage", newMessage);
-        if (receiverSocketId)
+        if (receiverSocketId) {
           io.to(receiverSocketId).emit("newMessage", newMessage);
+          console.log(`Message send to receiver at ${new Date().toISOString()}`)
+        }
       }
 
       if (typeof callback === "function")
