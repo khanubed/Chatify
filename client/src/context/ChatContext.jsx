@@ -17,6 +17,10 @@ export const ChatProvider = ({ children }) => {
   const [messages, setMessages] = useState([]);
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
+
+  // ✨ NEW: Separate state tracker specifically for real-time tracking
+  const [onlineUsers, setOnlineUsers] = useState([]);
+
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [unseenMessages, setUnseenMessages] = useState({});
@@ -27,7 +31,6 @@ export const ChatProvider = ({ children }) => {
 
   const { socket, authUser, setAuthUser } = useContext(AuthContext);
 
-  // Centralized real-time execution wrapper
   const emitSocketAction = useCallback(
     (eventName, payload, timeout = 30000) =>
       new Promise((resolve, reject) => {
@@ -35,27 +38,22 @@ export const ChatProvider = ({ children }) => {
 
         socket.timeout(timeout).emit(eventName, payload, (error, response) => {
           if (error) return reject(new Error("Socket request timed out"));
-
           if (!response?.success) {
             const errMsg = response?.message || "Socket action failed";
-
             if (
               errMsg.toLowerCase().includes("blocked") ||
               errMsg.toLowerCase().includes("unblock")
             ) {
               toast.error(errMsg);
             }
-
             return reject(new Error(errMsg));
           }
-
           resolve(response);
         });
       }),
     [socket],
   );
 
-  // Shared Seen Receipt Sync Wrapper
   const markAsSeen = useCallback(
     async (chatId, isGroupChat = false) => {
       if (!socket || !chatId) return;
@@ -71,7 +69,7 @@ export const ChatProvider = ({ children }) => {
     [socket, emitSocketAction],
   );
 
-  // Sync Background Core Dynamic Sockets Channel Observers
+  // Hook subscription tracking channel configurations
   useChatSockets({
     socket,
     authUser,
@@ -84,10 +82,10 @@ export const ChatProvider = ({ children }) => {
     setGroups,
     getGroups: () => getGroups(),
     setUsers,
+    setOnlineUsers, // ✨ PASS THIS DOWN: Update your hook to handle tracking inside here!
     markAsSeen,
   });
 
-  // REST Interface Dispatch Actions
   const getUsers = async () => {
     try {
       const data = await chatService.fetchUsers();
@@ -112,7 +110,6 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
-  // Autojoin socket rooms whenever group indices refresh
   useEffect(() => {
     if (!socket || groups.length === 0) return;
     groups.forEach((group) => {
@@ -193,24 +190,19 @@ export const ChatProvider = ({ children }) => {
       const data = await emitSocketAction("sendMessage", socketPayload, 15000);
 
       if (data.success) {
-        // 🌟 Handle Sidebar Rearrangements Dynamically
         if (isGroupChat) {
-          // Bubble group item to index 0
           setGroups((prevGroups) => {
             const targetGroup = prevGroups.find((g) => g._id === targetId);
             if (!targetGroup) return prevGroups;
-
             const remainingGroups = prevGroups.filter(
               (g) => g._id !== targetId,
             );
             return [targetGroup, ...remainingGroups];
           });
         } else {
-          // Bubble private user item to index 0
           setUsers((prevUsers) => {
             const targetUser = prevUsers.find((u) => u._id === targetId);
             if (!targetUser) return prevUsers;
-
             const remainingUsers = prevUsers.filter((u) => u._id !== targetId);
             return [targetUser, ...remainingUsers];
           });
@@ -231,7 +223,7 @@ export const ChatProvider = ({ children }) => {
           "Failed to dispatch message",
       );
     }
-  };  
+  };
 
   const editMessage = async (messageId, newText) => {
     if (!socket) return toast.error("Chat disconnected.");
@@ -254,7 +246,6 @@ export const ChatProvider = ({ children }) => {
   const handleMessageReaction = async (messageId, emoji) => {
     if (!socket) return toast.error("Chat disconnected.");
 
-    // Optimistic UI updates implementation mapping strategy
     setMessages((prev) =>
       prev.map((msg) => {
         if (msg._id !== messageId) return msg;
@@ -326,17 +317,13 @@ export const ChatProvider = ({ children }) => {
   const toggleBlockUserAction = async (userId) => {
     try {
       const data = await groupService.toggleBlockUser(userId);
-
       setAuthUser((prev) => ({ ...prev, blockedUsers: data.blockedUsers }));
-
       setSelectedUser(null);
       setMessages([]);
-
       setUsers((prevUsers) =>
         prevUsers.map((user) => {
           if (user._id === userId) {
             const isNowBlocked = data.blockedUsers.includes(userId);
-
             return {
               ...user,
               blockStatus: isNowBlocked ? "blockedByMe" : null,
@@ -433,6 +420,7 @@ export const ChatProvider = ({ children }) => {
         getMessages,
         users,
         getUsers,
+        onlineUsers, // ✨ EXPOSE THIS: Check online status via components using onlineUsers.includes(user._id)
         groups,
         getGroups,
         createGroup,

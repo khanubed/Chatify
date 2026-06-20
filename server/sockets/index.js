@@ -20,7 +20,7 @@ export const initSocketServer = (server) => {
     // Rely completely on verified identity token properties
     const userId = socket.user._id.toString();
     console.log("Securely Authenticated User Connected:", userId);
-
+    
     userSocketMap[userId] = socket.id;
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
 

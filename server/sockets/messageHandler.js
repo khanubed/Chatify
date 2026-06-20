@@ -1,12 +1,10 @@
 import Message from "../models/message.js";
 import User from "../models/user.js";
 import Group from "../models/group.js";
-import { uploadToCloudinary } from "../lib/multer.js";
 import { extractCloudinaryPublicId } from "../lib/util.js";
-import { v2 as cloudinary } from "cloudinary";  
+import { v2 as cloudinary } from "cloudinary";
 
 export default (io, socket, userSocketMap) => {
-
   const getAuthenticatedUserId = () => {
     const userId = socket.user?._id || socket.request?.user?._id;
     if (!userId) {
@@ -17,42 +15,6 @@ export default (io, socket, userSocketMap) => {
       return null;
     }
     return userId.toString();
-  };
-
-  const broadcastToConversation = (
-    message,
-    eventName,
-    payload,
-    excludeSocketId = null,
-  ) => {
-    if (message.groupId) {
-      if (excludeSocketId) {
-        socket.to(message.groupId.toString()).emit(eventName, payload);
-      } else {
-        io.to(message.groupId.toString()).emit(eventName, payload);
-      }
-    } else {
-      const receiverSocketId = userSocketMap[message.receiverId];
-      if (receiverSocketId && receiverSocketId !== excludeSocketId) {
-        io.to(receiverSocketId).emit(eventName, payload);
-      }
-      const senderSocketId = userSocketMap[message.senderId];
-      if (senderSocketId && senderSocketId !== excludeSocketId) {
-        io.to(senderSocketId).emit(eventName, payload);
-      }
-    }
-  };
-
-  const sendAck = (callback, payload) => {
-    if (typeof callback === "function") callback(payload);
-  };
-
-  const emitActionError = (callback, message, status = 400) => {
-    if (typeof callback === "function") {
-      sendAck(callback, { success: false, message, status });
-      return;
-    }
-    socket.emit("socketActionError", { message, status });
   };
 
   const parseBoolean = (value) => value === true || value === "true";
@@ -68,16 +30,21 @@ export default (io, socket, userSocketMap) => {
       .populate("seenBy", "fullName profilePic")
       .populate("reactions.userId", "fullName profilePic");
 
-  // 0. SEND MESSAGE HANDLER (persists message and media directly through Socket.IO)
+  // 0. SEND MESSAGE HANDLER
   socket.on("sendMessage", async (payload = {}, callback) => {
     try {
       const senderId = getAuthenticatedUserId();
       if (!senderId) {
-        return emitActionError(
-          callback,
-          "Socket connection is not authenticated",
-          401,
-        );
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Socket connection is not authenticated",
+            status: 401,
+          });
+        return socket.emit("socketActionError", {
+          message: "Socket connection is not authenticated",
+          status: 401,
+        });
       }
 
       const {
@@ -85,8 +52,8 @@ export default (io, socket, userSocketMap) => {
         targetId,
         groupId,
         parent,
-        image, 
-        audio, 
+        image,
+        audio,
         video,
         messageType,
       } = payload;
@@ -97,22 +64,47 @@ export default (io, socket, userSocketMap) => {
       const receiverId = isGroup ? null : targetId;
 
       if (!targetId && !resolvedGroupId) {
-        return emitActionError(callback, "Missing chat target");
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Missing chat target",
+            status: 400,
+          });
+        return socket.emit("socketActionError", {
+          message: "Missing chat target",
+          status: 400,
+        });
       }
 
       if (isGroup) {
         const group = await Group.findById(resolvedGroupId).select("members");
-        if (!group) return emitActionError(callback, "Group not found", 404);
+        if (!group) {
+          if (typeof callback === "function")
+            return callback({
+              success: false,
+              message: "Group not found",
+              status: 404,
+            });
+          return socket.emit("socketActionError", {
+            message: "Group not found",
+            status: 404,
+          });
+        }
 
         const isMember = group.members.some(
           (mId) => mId.toString() === senderId,
         );
         if (!isMember) {
-          return emitActionError(
-            callback,
-            "You are not a member of this group",
-            403,
-          );
+          if (typeof callback === "function")
+            return callback({
+              success: false,
+              message: "You are not a member of this group",
+              status: 403,
+            });
+          return socket.emit("socketActionError", {
+            message: "You are not a member of this group",
+            status: 403,
+          });
         }
       } else {
         const [receiver, sender] = await Promise.all([
@@ -121,16 +113,31 @@ export default (io, socket, userSocketMap) => {
         ]);
 
         if (!receiver || !sender) {
-          return emitActionError(callback, "User profile not found", 404);
+          if (typeof callback === "function")
+            return callback({
+              success: false,
+              message: "User profile not found",
+              status: 404,
+            });
+          return socket.emit("socketActionError", {
+            message: "User profile not found",
+            status: 404,
+          });
         }
 
         if (
           receiver.blockedUsers?.some((id) => id && id.toString() === senderId)
         ) {
-          return emitActionError(
-            callback,
-            "Message not sent. You have been blocked by this user.",
-          );
+          if (typeof callback === "function")
+            return callback({
+              success: false,
+              message: "Message not sent. You have been blocked by this user.",
+              status: 400,
+            });
+          return socket.emit("socketActionError", {
+            message: "Message not sent. You have been blocked by this user.",
+            status: 400,
+          });
         }
 
         if (
@@ -138,14 +145,19 @@ export default (io, socket, userSocketMap) => {
             (id) => id && id.toString() === receiverId.toString(),
           )
         ) {
-          return emitActionError(
-            callback,
-            "Message not sent. You must unblock this user.",
-          );
+          if (typeof callback === "function")
+            return callback({
+              success: false,
+              message: "Message not sent. You must unblock this user.",
+              status: 400,
+            });
+          return socket.emit("socketActionError", {
+            message: "Message not sent. You must unblock this user.",
+            status: 400,
+          });
         }
       }
 
-      // 🌟 Clean validation structure: All binary upload engines are gone.
       const resolvedMessageType = messageType || "text";
 
       let newMessage = await Message.create({
@@ -164,68 +176,151 @@ export default (io, socket, userSocketMap) => {
 
       newMessage = await hydrateMessage(newMessage._id);
 
-      broadcastToConversation(newMessage, "newMessage", newMessage, socket.id);
-      sendAck(callback, { success: true, newMessage });
+      // Inlined Broadcast Logic (Exclude sender since they receive the acknowledgement callback)
+      if (newMessage.groupId) {
+        socket.to(newMessage.groupId.toString()).emit("newMessage", newMessage);
+      } else {
+        const receiverSocketId =
+          userSocketMap[newMessage.receiverId?.toString()];
+        // if (receiverSocketId) io.to(receiverSocketId).emit("newMessage", newMessage);
+        if (receiverSocketId)
+          io.to(receiverSocketId).emit("newMessage", newMessage);
+      }
+
+      if (typeof callback === "function")
+        callback({ success: true, newMessage });
     } catch (error) {
       console.error("Socket Error in sendMessage handling layer:", error);
-      emitActionError(callback, error.message || "Failed to send message", 500);
+      if (typeof callback === "function")
+        return callback({
+          success: false,
+          message: error.message || "Failed to send message",
+          status: 500,
+        });
+      socket.emit("socketActionError", {
+        message: error.message || "Failed to send message",
+        status: 500,
+      });
     }
   });
 
-  // 1. EDIT MESSAGE HANDLER (Modifies database over WS directly)
+  // 1. EDIT MESSAGE HANDLER
   socket.on("editMessage", async ({ messageId, newText }, callback) => {
     try {
       const userId = getAuthenticatedUserId();
       if (!userId) return;
 
       const message = await Message.findById(messageId);
-      if (!message) return emitActionError(callback, "Message not found", 404);
+      if (!message) {
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Message not found",
+            status: 404,
+          });
+        return socket.emit("socketActionError", {
+          message: "Message not found",
+          status: 404,
+        });
+      }
 
-      // Security Guard Check
       if (message.senderId.toString() !== userId) {
         console.error(`Unauthorized edit attempt by user: ${userId}`);
-        return emitActionError(callback, "Unauthorized action", 403);
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Unauthorized action",
+            status: 403,
+          });
+        return socket.emit("socketActionError", {
+          message: "Unauthorized action",
+          status: 403,
+        });
       }
 
       if (message.isDeleted) {
-        return emitActionError(callback, "Cannot edit a deleted message");
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Cannot edit a deleted message",
+            status: 400,
+          });
+        return socket.emit("socketActionError", {
+          message: "Cannot edit a deleted message",
+          status: 400,
+        });
       }
 
-      // Update schema parameters
       message.text = newText;
       message.isEdited = true;
       await message.save();
 
-      // Broadcast complete updated state out to the channels
-      broadcastToConversation(message, "messageUpdated", message);
-      sendAck(callback, { success: true, message });
+      // Inlined Broadcast Logic (Emits to everyone in the chat pipeline)
+      if (message.groupId) {
+        io.to(message.groupId.toString()).emit("messageUpdated", message);
+      } else {
+        const receiverSocketId = userSocketMap[message.receiverId];
+        if (receiverSocketId)
+          io.to(receiverSocketId).emit("messageUpdated", message);
+        const senderSocketId = userSocketMap[message.senderId];
+        if (senderSocketId)
+          io.to(senderSocketId).emit("messageUpdated", message);
+      }
+
+      if (typeof callback === "function") callback({ success: true, message });
     } catch (error) {
       console.error("Socket Error in editMessage handling layer:", error);
-      emitActionError(callback, error.message || "Failed to edit message", 500);
+      if (typeof callback === "function")
+        return callback({
+          success: false,
+          message: error.message || "Failed to edit message",
+          status: 500,
+        });
+      socket.emit("socketActionError", {
+        message: error.message || "Failed to edit message",
+        status: 500,
+      });
     }
   });
 
-  // 2. DELETE MESSAGE HANDLER (Applies Soft Delete directly over WS)
+  // 2. DELETE MESSAGE HANDLER
   socket.on("deleteMessage", async ({ messageId }, callback) => {
     try {
       const userId = getAuthenticatedUserId();
       if (!userId) return;
 
       const message = await Message.findById(messageId);
-      if (!message) return emitActionError(callback, "Message not found", 404);
-
-      // Security Guard Check
-      if (message.senderId.toString() !== userId) {
-        console.error(`Unauthorized delete attempt by user: ${userId}`);
-        return emitActionError(callback, "Unauthorized action", 403);
+      if (!message) {
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Message not found",
+            status: 404,
+          });
+        return socket.emit("socketActionError", {
+          message: "Message not found",
+          status: 404,
+        });
       }
 
-      // 🌟 OPTIMIZATION STEP 1: Capture the target file links before nullifying them
+      if (message.senderId.toString() !== userId) {
+        console.error(`Unauthorized delete attempt by user: ${userId}`);
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Unauthorized action",
+            status: 403,
+          });
+        return socket.emit("socketActionError", {
+          message: "Unauthorized action",
+          status: 403,
+        });
+      }
+
       const mediaUrls = [message.image, message.audio, message.video].filter(
         Boolean,
       );
 
-      // Scrub the database records instantly
       message.isDeleted = true;
       message.text = "This message was deleted";
       message.image = null;
@@ -233,30 +328,31 @@ export default (io, socket, userSocketMap) => {
       message.video = null;
       await message.save();
 
-      // 🌟 OPTIMIZATION STEP 2: Respond to client interfaces instantly (Zero UI blockage)
-      broadcastToConversation(message, "messageRemoved", message);
-      sendAck(callback, { success: true, message });
+      // Inlined Broadcast Logic
+      if (message.groupId) {
+        io.to(message.groupId.toString()).emit("messageRemoved", message);
+      } else {
+        const receiverSocketId = userSocketMap[message.receiverId];
+        if (receiverSocketId)
+          io.to(receiverSocketId).emit("messageRemoved", message);
+        const senderSocketId = userSocketMap[message.senderId];
+        if (senderSocketId)
+          io.to(senderSocketId).emit("messageRemoved", message);
+      }
 
-      // 🌟 OPTIMIZATION STEP 3: Fire-and-Forget Cloudinary background cleanup execution engine
+      if (typeof callback === "function") callback({ success: true, message });
+
+      // Background Cloudinary Asset Cleanup
       if (mediaUrls.length > 0) {
-        // Intentionally run without wrapping in 'await' so it detaches from the main thread execution line
         Promise.all(
           mediaUrls.map(async (url) => {
             const assetDetails = extractCloudinaryPublicId(url);
             if (!assetDetails) return;
-
             try {
-              const result = await cloudinary.uploader.destroy(
-                assetDetails.publicId,
-                {
-                  resource_type: assetDetails.resourceType,
-                  invalidate: true, // Force-evicts CDN cache nodes immediately
-                },
-              );
-              console.log(
-                `Cloudinary garbage collector scrub complete for asset: ${assetDetails.publicId}`,
-                result,
-              );
+              await cloudinary.uploader.destroy(assetDetails.publicId, {
+                resource_type: assetDetails.resourceType,
+                invalidate: true,
+              });
             } catch (cloudinaryErr) {
               console.error(
                 `Background cloud erasure routine stalled for asset URL (${url}):`,
@@ -273,22 +369,38 @@ export default (io, socket, userSocketMap) => {
       }
     } catch (error) {
       console.error("Socket Error in deleteMessage handling layer:", error);
-      emitActionError(
-        callback,
-        error.message || "Failed to delete message",
-        500,
-      );
+      if (typeof callback === "function")
+        return callback({
+          success: false,
+          message: error.message || "Failed to delete message",
+          status: 500,
+        });
+      socket.emit("socketActionError", {
+        message: error.message || "Failed to delete message",
+        status: 500,
+      });
     }
   });
 
-  // 3. TOGGLE REACTION HANDLER (Manages Reaction Array directly over WS)
+  // 3. TOGGLE REACTION HANDLER
   socket.on("toggleReaction", async ({ messageId, emoji }, callback) => {
     try {
       const userId = getAuthenticatedUserId();
       if (!userId) return;
 
       const message = await Message.findById(messageId);
-      if (!message) return emitActionError(callback, "Message not found", 404);
+      if (!message) {
+        if (typeof callback === "function")
+          return callback({
+            success: false,
+            message: "Message not found",
+            status: 404,
+          });
+        return socket.emit("socketActionError", {
+          message: "Message not found",
+          status: 404,
+        });
+      }
 
       const existingReactionIndex = message.reactions.findIndex(
         (r) => r.userId.toString() === userId,
@@ -296,43 +408,54 @@ export default (io, socket, userSocketMap) => {
 
       if (existingReactionIndex > -1) {
         if (message.reactions[existingReactionIndex].emoji === emoji) {
-          // Toggle off if clicking the identical icon
           message.reactions.splice(existingReactionIndex, 1);
         } else {
-          // Change selection choice state mapping
           message.reactions[existingReactionIndex].emoji = emoji;
         }
       } else {
-        // Build new reaction schema reference
         message.reactions.push({ userId, emoji });
       }
 
       await message.save();
 
-      // Hydrate profiles for precise layout rendering
       const populatedMessage = await Message.findById(messageId).populate(
         "reactions.userId",
         "fullName profilePic",
       );
 
-      // Distribute fresh reaction configurations out to channels
-      broadcastToConversation(
-        populatedMessage,
-        "reactionUpdated",
-        populatedMessage,
-      );
-      sendAck(callback, { success: true, message: populatedMessage });
+      // Inlined Broadcast Logic
+      if (populatedMessage.groupId) {
+        io.to(populatedMessage.groupId.toString()).emit(
+          "reactionUpdated",
+          populatedMessage,
+        );
+      } else {
+        const receiverSocketId = userSocketMap[populatedMessage.receiverId];
+        if (receiverSocketId)
+          io.to(receiverSocketId).emit("reactionUpdated", populatedMessage);
+        const senderSocketId = userSocketMap[populatedMessage.senderId];
+        if (senderSocketId)
+          io.to(senderSocketId).emit("reactionUpdated", populatedMessage);
+      }
+
+      if (typeof callback === "function")
+        callback({ success: true, message: populatedMessage });
     } catch (error) {
       console.error("Socket Error in toggleReaction handling layer:", error);
-      emitActionError(
-        callback,
-        error.message || "Failed to update reaction",
-        500,
-      );
+      if (typeof callback === "function")
+        return callback({
+          success: false,
+          message: error.message || "Failed to update reaction",
+          status: 500,
+        });
+      socket.emit("socketActionError", {
+        message: error.message || "Failed to update reaction",
+        status: 500,
+      });
     }
   });
 
-  // 4. SEEN RECEIPT HANDLER (persists seenBy directly through Socket.IO)
+  // 4. SEEN RECEIPT HANDLER
   socket.on("markMessagesSeen", async ({ chatId, isGroup }, callback) => {
     try {
       const userId = getAuthenticatedUserId();
@@ -347,44 +470,44 @@ export default (io, socket, userSocketMap) => {
               seenBy: { $ne: userId },
               senderId: { $ne: userId },
             }
-          : {
-              senderId: chatId,
-              receiverId: userId,
-              seenBy: { $ne: userId },
-            },
+          : { senderId: chatId, receiverId: userId, seenBy: { $ne: userId } },
         { $addToSet: { seenBy: userId } },
       );
 
-      const user = {
-        _id: socket.user._id,
-        fullName: socket.user.fullName,
-        profilePic: socket.user.profilePic,
-        username: socket.user.username,
+      const payload = {
+        chatId,
+        user: {
+          _id: socket.user._id,
+          fullName: socket.user.fullName,
+          profilePic: socket.user.profilePic,
+          username: socket.user.username,
+        },
       };
-
-      const payload = { chatId, user };
 
       if (parsedIsGroup) {
         io.to(chatId.toString()).emit("userSeenReceipt", payload);
       } else {
         const targetSocketId = userSocketMap[chatId];
-        if (targetSocketId) {
+        if (targetSocketId)
           io.to(targetSocketId).emit("userSeenReceipt", payload);
-        }
         const currentSocketId = userSocketMap[userId];
-        if (currentSocketId) {
+        if (currentSocketId)
           io.to(currentSocketId).emit("userSeenReceipt", payload);
-        }
       }
 
-      sendAck(callback, { success: true });
+      if (typeof callback === "function") callback({ success: true });
     } catch (error) {
       console.error("Socket Error in markMessagesSeen handling layer:", error);
-      emitActionError(
-        callback,
-        error.message || "Failed to mark messages seen",
-        500,
-      );
+      if (typeof callback === "function")
+        return callback({
+          success: false,
+          message: error.message || "Failed to mark messages seen",
+          status: 500,
+        });
+      socket.emit("socketActionError", {
+        message: error.message || "Failed to mark messages seen",
+        status: 500,
+      });
     }
   });
 };
