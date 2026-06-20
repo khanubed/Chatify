@@ -6,7 +6,7 @@ import { extractCloudinaryPublicId } from "../lib/util.js";
 import { v2 as cloudinary } from "cloudinary";  
 
 export default (io, socket, userSocketMap) => {
-  // Guard check helper to ensure user is authenticated over socket connection
+
   const getAuthenticatedUserId = () => {
     const userId = socket.user?._id || socket.request?.user?._id;
     if (!userId) {
@@ -19,8 +19,6 @@ export default (io, socket, userSocketMap) => {
     return userId.toString();
   };
 
-  // Helper utility to safely route events to both direct message participants or group rooms
-  // excludeSocketId: optionally skip emitting to this socket (e.g. sender who already got the ack)
   const broadcastToConversation = (
     message,
     eventName,
@@ -28,14 +26,12 @@ export default (io, socket, userSocketMap) => {
     excludeSocketId = null,
   ) => {
     if (message.groupId) {
-      // Broadcast to the whole group room, optionally excluding a socket
       if (excludeSocketId) {
         socket.to(message.groupId.toString()).emit(eventName, payload);
       } else {
         io.to(message.groupId.toString()).emit(eventName, payload);
       }
     } else {
-      // Dispatch individually to sender and receiver mapping links
       const receiverSocketId = userSocketMap[message.receiverId];
       if (receiverSocketId && receiverSocketId !== excludeSocketId) {
         io.to(receiverSocketId).emit(eventName, payload);
@@ -60,13 +56,6 @@ export default (io, socket, userSocketMap) => {
   };
 
   const parseBoolean = (value) => value === true || value === "true";
-
-  const buildFileBuffer = (file) => {
-    if (!file?.buffer) return null;
-    return Buffer.isBuffer(file.buffer)
-      ? file.buffer
-      : Buffer.from(file.buffer);
-  };
 
   const hydrateMessage = (messageId) =>
     Message.findById(messageId)
@@ -96,9 +85,9 @@ export default (io, socket, userSocketMap) => {
         targetId,
         groupId,
         parent,
-        image, // 🌟 Now comes in directly as strings containing URLs
-        audio, // 🌟
-        video, // 🌟
+        image, 
+        audio, 
+        video,
         messageType,
       } = payload;
 

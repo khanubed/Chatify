@@ -102,10 +102,10 @@ export const AuthProvider = ({ children }) => {
       transports: ["websocket"],
       upgrade: false,
       reconnection: true,
-      // reconnectionAttempts: Infinity,
-      // reconnectionDelay: 5000,
-      // reconnectionDelayMax: 10000,
-      // timeout: 15000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 5000,
+      reconnectionDelayMax: 10000,
+      timeout: 15000,
     });
 
     newSocket.connect();
