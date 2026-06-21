@@ -182,9 +182,9 @@ export const ChatProvider = ({ children }) => {
         parent: formData.get("parent"),
         isForwarded: formData.get("isForwarded") || false,
         messageType: autoDetectedType || formData.get("messageType") || "text",
-        image: autoDetectedType === "image" ? uploadedMediaUrl : null,
-        audio: autoDetectedType === "audio" ? uploadedMediaUrl : null,
-        video: autoDetectedType === "video" ? uploadedMediaUrl : null,
+        image: autoDetectedType === "image" ? uploadedMediaUrl : formData.get("image"),
+        audio: autoDetectedType === "audio" ? uploadedMediaUrl : formData.get("audio"),
+        video: autoDetectedType === "video" ? uploadedMediaUrl : formData.get("video"),
       };
 
       const data = await emitSocketAction("sendMessage", socketPayload, 15000);
