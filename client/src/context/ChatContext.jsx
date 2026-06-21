@@ -367,6 +367,9 @@ export const ChatProvider = ({ children }) => {
     try {
       const formData = new FormData();
       formData.append("text", messageToForward.text || "");
+      formData.append("image", messageToForward.image || "");
+      formData.append("audio", messageToForward.audio || "");
+      formData.append("video", messageToForward.video || "");
       formData.append("isGroup", isGroupTarget ? "true" : "false");
       formData.append("isForwarded", "true");
 

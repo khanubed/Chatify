@@ -24,7 +24,7 @@ export const initSocketServer = (server) => {
     userSocketMap[userId] = socket.id;
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-    console.log(userSocketMap);
+    // console.log(userSocketMap);
 
     // Dynamic Channel/Room listeners
     socket.on("joinPersonalRoom", (id) => socket.join(id));

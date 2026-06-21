@@ -95,14 +95,11 @@ export const useChatSockets = ({
       }
     };
 
-    // 🌟 FIX: Handle Real-Time Live List Synced From Server Map Strings
     const handleOnlineUsers = (userIdsArray) => {
-      console.log("Updated Live Users Map:", userIdsArray);
       setOnlineUsers(userIdsArray);
     };
 
-    // Subscriptions
-    socket.on("getOnlineUsers", handleOnlineUsers); // ✨ FIXED: Missing listener attached
+    socket.on("getOnlineUsers", handleOnlineUsers);
     socket.on("newMessage", handleNewMessage);
 
     socket.on("messageUpdated", (updatedMsg) => {
@@ -194,7 +191,7 @@ export const useChatSockets = ({
 
     // Unmount cleanup sequence
     return () => {
-      socket.off("getOnlineUsers", handleOnlineUsers); // ✨ CLEANED UP
+      socket.off("getOnlineUsers", handleOnlineUsers);
       socket.off("newMessage", handleNewMessage);
       socket.off("messageUpdated");
       socket.off("messageRemoved");
@@ -215,9 +212,9 @@ export const useChatSockets = ({
     setUnseenMessages,
     setUnseenGroups,
     setTypingStatus,
-    setGroups, // ✨ ADDED TO RUNTIME REFERENCE
-    setUsers, // ✨ FIXED: Added missing dependency mapping
-    setOnlineUsers, // ✨ ADDED TO RUNTIME REFERENCE
+    setGroups,
+    setUsers,
+    setOnlineUsers,
     getGroups,
     markAsSeen,
   ]);
