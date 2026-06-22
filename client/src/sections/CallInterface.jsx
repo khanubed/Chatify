@@ -110,6 +110,8 @@ const CallInterface = () => {
                   />
                 ) : (
                   <div className="flex flex-col items-center gap-2">
+                    {/* Invisible local audio node to bind stream internally if needed */}
+                    <audio ref={localVideoRef} muted autoPlay playsInline />
                     <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-xl font-bold border border-white/5">
                       You
                     </div>
@@ -159,6 +161,9 @@ const CallInterface = () => {
                 </>
               ) : (
                 <div className="flex-1 w-full h-full flex flex-col items-center justify-center gap-4">
+                  {/* ✨ FIX: Keeps ref alive to feed audio tracks to user speakers */}
+                  <audio ref={remoteVideoRef} autoPlay playsInline />
+
                   <img
                     src={partnerDetails?.profilePic || assets.avatar_icon}
                     alt="Partner profile"
@@ -250,6 +255,9 @@ const GroupVideoPlayer = ({ stream, profile, callType }) => {
         />
       ) : (
         <div className="flex flex-col items-center gap-3">
+          {/* ✨ FIX: Allows group audio-only streams to play output voice */}
+          <audio ref={videoRef} autoPlay playsInline />
+
           <img
             src={profile?.profilePic || assets.avatar_icon}
             alt=""
