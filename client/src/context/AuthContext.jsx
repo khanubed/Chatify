@@ -134,6 +134,21 @@ export const AuthProvider = ({ children }) => {
     socket.emit("joinPersonalRoom", authUser._id.toString());
   }, [socket, authUser?._id]);
 
+  // Add this below your other useEffects in AuthContext.jsx
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [socket]);
+
   const value = {
     axios,
     authUser,
