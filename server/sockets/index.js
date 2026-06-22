@@ -12,6 +12,8 @@ export const initSocketServer = (server) => {
   io = new Server(server, {
     cors: { origin: process.env.FRONTEND_URL },
     maxHttpBufferSize: 50 * 1024 * 1024,
+    pingTimeout: 60000,   
+    pingInterval: 25000,
   });
 
   io.use(socketAuth);

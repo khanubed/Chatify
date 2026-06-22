@@ -10,13 +10,13 @@ export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("token"));
-  
+
   // 🌟 FIX: Initialize authUser instantly from localStorage to prevent lag/stalls
   const [authUser, setAuthUser] = useState(() => {
     const savedUser = localStorage.getItem("authUser");
     return savedUser ? JSON.parse(savedUser) : null;
   });
-  
+
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [socket, setSocket] = useState(null);
 
@@ -42,15 +42,15 @@ export const AuthProvider = ({ children }) => {
       const { data } = await axios.post(`/api/auth/${state}`, credentials);
       if (data.success) {
         const userData = data.userData || data.user;
-        
+
         // Set everything in memory and storage simultaneously
         setAuthUser(userData);
         localStorage.setItem("authUser", JSON.stringify(userData));
-        
+
         axios.defaults.headers.common["token"] = data.token;
         setToken(data.token);
         localStorage.setItem("token", data.token);
-        
+
         connectSocket(userData);
         toast.success(data.message);
       } else {
@@ -68,7 +68,7 @@ export const AuthProvider = ({ children }) => {
     setAuthUser(null);
     setOnlineUsers([]);
     axios.defaults.headers.common["token"] = null;
-    
+
     if (socket) {
       socket.disconnect();
       setSocket(null);
@@ -99,11 +99,15 @@ export const AuthProvider = ({ children }) => {
       auth: {
         token: activeToken,
       },
+
+      transports: ["websocket"],
+      upgrade: false,
+
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 5000,
-      reconnectionDelayMax: 10000,
-      timeout: 15000,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 6000,
+      timeout: 30000,
     });
 
     newSocket.connect();
