@@ -1,7 +1,7 @@
 import React, { useContext, useState } from "react";
 import assets from "../assets/assets";
 import { AuthContext } from "../context/AuthContext";
-import toast from "react-hot-toast"; // Recommended over 'alert' for standard feedback
+import toast from "react-hot-toast";
 
 const LoginPage = () => {
   const [currentState, setCurrentState] = useState("Sign up");
@@ -9,49 +9,51 @@ const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [bio, setBio] = useState("");
+  const [dob, setDob] = useState(""); // 🌟 ADDED DOB STATE
   const [isDataSubmitted, setIsDataSubmitted] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(false); // 🌟 TRACKING STATE ADDED
+  const [agreeTerms, setAgreeTerms] = useState(false);
 
   const { login } = useContext(AuthContext);
 
   const submitHandler = (event) => {
     event.preventDefault();
 
-    // Show bio field first if not already shown
+    // Show bio and dob fields first if not already shown
     if (currentState === "Sign up" && !isDataSubmitted) {
       setIsDataSubmitted(true);
       return;
     }
 
-    // Validate fields before calling login
+    // Validate fields before calling login (Added dob to validation)
     if (
       (currentState === "Sign up" &&
-        (!fullName || !email || !password || !bio)) ||
+        (!fullName || !email || !password || !bio || !dob)) ||
       (currentState === "Login" && (!email || !password))
     ) {
       toast.error("Please fill in all required fields.");
       return;
     }
 
-    // 🌟 VALIDATION GUARD FOR TERMS & CONDITIONS
     if (currentState === "Sign up" && !agreeTerms) {
       toast.error("You must agree to the terms of use & privacy policy.");
       return;
     }
 
+    // 🌟 ADDED DOB TO PAYLOAD
     login(currentState === "Sign up" ? "signup" : "login", {
       fullName,
       email,
       password,
       bio,
+      dob,
     });
   };
 
-  // Helper helper to switch form modes cleanly
   const handleModeSwitch = (mode) => {
     setCurrentState(mode);
     setIsDataSubmitted(false);
-    setAgreeTerms(false); // Reset terms agreement status on switch
+    setAgreeTerms(false);
+    setDob(""); // 🌟 Reset DOB on switch
   };
 
   return (
@@ -107,15 +109,29 @@ const LoginPage = () => {
           </>
         )}
 
+        {/* 🌟 STEP 2: Bio and DOB */}
         {currentState === "Sign up" && isDataSubmitted && (
-          <textarea
-            rows={4}
-            onChange={(e) => setBio(e.target.value)}
-            value={bio}
-            className="p-2 rounded-md border border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-700"
-            placeholder="Provide a bio... "
-            required
-          />
+          <>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-gray-500">Date of Birth</label>
+              <input
+                type="date"
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+                className="p-2 rounded-md border border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-700 text-gray-500"
+                required
+              />
+            </div>
+
+            <textarea
+              rows={4}
+              onChange={(e) => setBio(e.target.value)}
+              value={bio}
+              className="p-2 rounded-md border border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-700 text-gray-500"
+              placeholder="Provide a bio... "
+              required
+            />
+          </>
         )}
 
         <button
@@ -125,7 +141,6 @@ const LoginPage = () => {
           {currentState === "Sign up" ? "Create Account" : "Login Now"}
         </button>
 
-        {/* 🌟 CONTROLLED CHECKBOX COMPONENT */}
         {currentState === "Sign up" && (
           <div className="flex items-center gap-2 text-sm text-gray-500 select-none">
             <input

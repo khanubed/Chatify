@@ -6,7 +6,7 @@ import User from "../models/user.js";
 import { generateToken } from "../lib/util.js";
 
 export const signup = async (req, res) => {
-  const { fullName, email, password, bio } = req.body;
+  const { fullName, email, password, bio, dob } = req.body;
   try {
     if (!fullName || !email || !password || !bio) {
       return res.json({ success: false, message: "Missing Details" });
@@ -18,11 +18,15 @@ export const signup = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    if (!dob) dob = Date.now();
+
     const newUser = await User.create({
       fullName,
       email,
       password: hashedPassword,
       bio,
+      dob,
+      isCelebrated: true,
     });
 
     const token = generateToken(newUser._id);
@@ -42,21 +46,25 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     // 1. Look for the user
     const userData = await User.findOne({ email });
-    
+
     // 🌟 FIXED: If no user matches the email, exit early!
     if (!userData) {
-      return res.status(400).json({ success: false, message: "Invalid Credentials" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid Credentials" });
     }
 
     // 2. Safely compare passwords now that we know userData isn't null
     const isPasswordMatched = await bcrypt.compare(password, userData.password);
     if (!isPasswordMatched) {
-      return res.status(400).json({ success: false, message: "Invalid Credentials" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid Credentials" });
     }
-    
+
     const token = generateToken(userData._id);
 
     res.json({
@@ -67,7 +75,9 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.log(error.message);
-    res.status(500).json({ success: false, message: "An internal server error occurred" });
+    res
+      .status(500)
+      .json({ success: false, message: "An internal server error occurred" });
   }
 };
 
@@ -81,30 +91,34 @@ export const authCheck = (req, res) => {
 
 export const editProfile = async (req, res) => {
   try {
-    const { profilePic, fullName, bio } = req.body;
-
+    const { profilePic, fullName, bio, dob } = req.body;
     const userId = req.user._id;
-    let updatedUser;
 
-    if (!profilePic) {
-      updatedUser = await User.findByIdAndUpdate(
-        userId,
-        { bio, fullName },
-        { new: true },
-      );
-    } else {
-      const upload = await cloudinary.uploader.upload(profilePic);
-      updatedUser = await User.findByIdAndUpdate(
-        userId,
-        { profilePic: upload.secure_url, fullName, bio },
-        { new: true },
-      );
+    // 1. Build the base update payload
+    const updatePayload = { fullName, bio };
+
+    // 2. Append DOB fields if they exist
+    if (dob) {
+      updatePayload.dob = dob;
+      updatePayload.isCelebrated = true;
     }
+
+    // 3. Append Profile Picture if a new one was uploaded
+    if (profilePic) {
+      const upload = await cloudinary.uploader.upload(profilePic);
+      updatePayload.profilePic = upload.secure_url;
+    }
+
+    // 4. Execute a single, clean database update
+    const updatedUser = await User.findByIdAndUpdate(userId, updatePayload, {
+      new: true,
+    });
 
     res.json({ success: true, user: updatedUser });
   } catch (error) {
     console.log(error.message);
-    res.json({ success: true, message: error.message });
+    // 🌟 FIXED: Changed success to false so the frontend catches the error properly
+    res.json({ success: false, message: error.message });
   }
 };
 

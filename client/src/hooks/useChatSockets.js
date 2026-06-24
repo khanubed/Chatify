@@ -6,6 +6,7 @@ export const useChatSockets = ({
   authUser,
   selectedUser,
   selectedGroup,
+  markAsSeen,
   setMessages,
   setUnseenMessages,
   setUnseenGroups,
@@ -13,8 +14,7 @@ export const useChatSockets = ({
   setGroups,
   getGroups,
   setUsers,
-  setOnlineUsers, // ✨ ADDED: Hook into the dedicated real-time tracker passed from ChatProvider
-  markAsSeen,
+  setOnlineUsers,
 }) => {
   useEffect(() => {
     if (!socket) return;

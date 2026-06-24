@@ -6,6 +6,7 @@ import { connectDB } from "./lib/db.js";
 import userRouter from "./routes/userRoutes.js";
 import messageRouter from "./routes/messageRoutes.js";
 import groupRouter from "./routes/groupRoutes.js";
+import birthdayRouter from './routes/birthdayRoutes.js'
 import { initSocketServer } from "./sockets/index.js";
 
 const app = express();
@@ -19,6 +20,7 @@ app.use("/api/status", (req, res) => res.send("server is live"));
 app.use("/api/auth", userRouter);
 app.use("/api/messages", messageRouter);
 app.use("/api/groups", groupRouter);
+app.use("/api/birthday", birthdayRouter )   
 app.get("/", (req, res) => res.send("Backend server is running...."));
 
 // 🌟 Initialize Modular Socket Infrastructure Layer

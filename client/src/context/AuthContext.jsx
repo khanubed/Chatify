@@ -20,7 +20,6 @@ export const AuthProvider = ({ children }) => {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [socket, setSocket] = useState(null);
 
-  // 🌟 MODIFIED: Only run this silently in the background if needed, or omit completely if middleware covers it
   const authCheck = async () => {
     if (!localStorage.getItem("token")) return;
     try {
@@ -63,7 +62,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     localStorage.removeItem("token");
-    localStorage.removeItem("authUser"); // 🌟 Clean up cache
+    localStorage.removeItem("authUser");
     setToken(null);
     setAuthUser(null);
     setOnlineUsers([]);
@@ -118,7 +117,6 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
-  // 🌟 LIFECYCLE 1: Set Axios Headers and instantly trigger Socket if user cache exists
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common["token"] = token;
@@ -128,13 +126,11 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token]);
 
-  // 🌟 LIFECYCLE 2: Join target personal channel once room binds
   useEffect(() => {
     if (!socket || !authUser?._id) return;
     socket.emit("joinPersonalRoom", authUser._id.toString());
   }, [socket, authUser?._id]);
 
-  // Add this below your other useEffects in AuthContext.jsx
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (socket) {

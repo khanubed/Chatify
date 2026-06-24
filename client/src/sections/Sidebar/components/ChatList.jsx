@@ -1,6 +1,7 @@
 import React, { useContext } from "react";
 import { ChatContext } from "../../../context/ChatContext";
 import { AuthContext } from "../../../context/AuthContext";
+import { CakeIcon } from "lucide-react";
 import assets from "../../../assets/assets";
 
 const ChatList = ({ search }) => {
@@ -27,6 +28,19 @@ const ChatList = ({ search }) => {
     setSelectedUser(user);
     const userIdStr = user._id?.toString();
     if (userIdStr) setUnseenMessages((prev) => ({ ...prev, [userIdStr]: 0 }));
+  };
+
+  // 🌟 NEW: Helper function to check if month and day match today
+  const isBirthdayToday = (dob) => {
+    if (!dob) return false;
+
+    const today = new Date();
+    const birthDate = new Date(dob);
+    // console.log(today,birthDate);
+    return (
+      today.getMonth() === birthDate.getMonth() &&
+      today.getDate() === birthDate.getDate()
+    );
   };
 
   return (
@@ -67,21 +81,33 @@ const ChatList = ({ search }) => {
               </div>
             </div>
 
-            {iBlockedThem && (
-              <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30">
-                You Blocked
-              </span>
-            )}
-            {theyBlockedMe && !iBlockedThem && (
-              <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30">
-                Blocked You
-              </span>
-            )}
-            {directCount > 0 && !iBlockedThem && !theyBlockedMe && (
-              <p className="absolute top-4 right-4 text-xs h-5 w-5 flex justify-center items-center rounded-full bg-blue-500 text-white font-bold animate-bounce">
-                {directCount}
-              </p>
-            )}
+            {/* 🌟 FIXED: Birthday Icon Logic */}
+            <div className="flex items-center gap-3">
+              {isBirthdayToday(user.dob) && (
+                <div
+                  title={`${user.fullName}'s Birthday!`}
+                  className="text-pink-400 animate-pulse"
+                >
+                  <CakeIcon className="size-5" />
+                </div>
+              )}
+
+              {iBlockedThem && (
+                <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30">
+                  You Blocked
+                </span>
+              )}
+              {theyBlockedMe && !iBlockedThem && (
+                <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30">
+                  Blocked You
+                </span>
+              )}
+              {directCount > 0 && !iBlockedThem && !theyBlockedMe && (
+                <p className="absolute top-4 right-4 text-xs h-5 w-5 flex justify-center items-center rounded-full bg-blue-500 text-white font-bold animate-bounce">
+                  {directCount}
+                </p>
+              )}
+            </div>
           </div>
         );
       })}

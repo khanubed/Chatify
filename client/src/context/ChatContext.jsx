@@ -18,7 +18,6 @@ export const ChatProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
 
-  // ✨ NEW: Separate state tracker specifically for real-time tracking
   const [onlineUsers, setOnlineUsers] = useState([]);
 
   const [selectedUser, setSelectedUser] = useState(null);
